@@ -1,26 +1,16 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/bwmarrin/discordgo"
-	"github.com/joho/godotenv"
 )
 
-var isProd bool
-
 func main() {
-	flag.BoolVar(&isProd, "prod", false, "")
-	flag.Parse()
-	if isProd {
-		godotenv.Load(".env")
-	} else {
-		godotenv.Load(".env.dev")
-	}
+	pomomo.LoadEnv()
 
 	//
 	token := os.Getenv("POMOMO_BOT_TOKEN")

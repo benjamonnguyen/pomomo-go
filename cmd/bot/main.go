@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -9,20 +8,17 @@ import (
 	"syscall"
 
 	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/commands"
 	"github.com/bwmarrin/discordgo"
-	"github.com/joho/godotenv"
+	_ "modernc.org/sqlite"
 )
 
-var isProd bool
-
 func main() {
-	flag.BoolVar(&isProd, "prod", false, "")
-	flag.Parse()
-	if isProd {
-		godotenv.Load(".env")
-	} else {
-		godotenv.Load(".env.dev")
-	}
+	// config
+	pomomo.LoadEnv()
+
+	// db
+	initDB(os.Getenv("POMOMO_DB_PATH"))
 
 	_ = os.Getenv("POMOMO_SUPER_USER_ID")
 	botName := os.Getenv("POMOMO_BOT_NAME")
@@ -30,7 +26,7 @@ func main() {
 		botName = "Pomomo"
 	}
 
-	//
+	// set up bot
 	token := os.Getenv("POMOMO_BOT_TOKEN")
 	if token == "" {
 		log.Fatalln("provide POMOMO_BOT_TOKEN")
@@ -40,44 +36,19 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	// handlers
-	bot.AddHandler(pomomo.HandleStartCommand)
+	// COMMAND HANDLERS
+	bot.AddHandler(commands.HandleStartCommand)
 
-	// Open a connection
+	// open connection
 	if err := bot.Open(); err != nil {
 		log.Fatalln("Error opening connection:", err)
 	}
 	defer bot.Close()
 
-	// Wait for a termination signal
+	//
 	fmt.Println(botName + " bot is now running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	fmt.Println("Terminating " + botName)
-}
-
-// TODO replace usage with followUpper
-func followUpMessageCreate(content string, s *discordgo.Session, it *discordgo.Interaction) {
-	s.FollowupMessageCreate(it, false, &discordgo.WebhookParams{
-		Content: content,
-	})
-}
-
-type followUpper struct {
-	s  *discordgo.Session
-	it *discordgo.Interaction
-}
-
-func (fu followUpper) CreateMsg(format string, a ...any) {
-	fu.s.FollowupMessageCreate(fu.it, false, &discordgo.WebhookParams{
-		Content: fmt.Sprintf(format, a...),
-	})
-}
-
-func getUser(m *discordgo.Interaction) *discordgo.User {
-	if m.Member != nil {
-		return m.Member.User
-	}
-	return m.User
 }

@@ -1,8 +1,6 @@
 package pomomo
 
 import (
-	"log"
-
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -31,31 +29,4 @@ var StartCommand = discordgo.ApplicationCommand{
 			Description: "number of intervals between long breaks (Default: 4)",
 		},
 	},
-}
-
-func HandleStartCommand(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	if m.Type != discordgo.InteractionApplicationCommand {
-		return
-	}
-
-	data := m.ApplicationCommandData()
-	if data.Name != StartCommand.Name {
-		return
-	}
-
-	// TODO HandleStartCommand
-	err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "test",
-		},
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// TODO handle err
-	// _ = s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
-	// 	Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	// })
 }
