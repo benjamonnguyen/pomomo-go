@@ -3,21 +3,19 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/bwmarrin/discordgo"
 )
 
 func main() {
-	pomomo.LoadEnv()
+	config, err := pomomo.LoadConfig()
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	//
-	token := os.Getenv("POMOMO_BOT_TOKEN")
-	if token == "" {
-		log.Fatalln("provide POMOMO_BOT_TOKEN")
-	}
-	bot, err := discordgo.New("Bot " + token)
+	bot, err := discordgo.New("Bot " + config.BotToken)
 	if err != nil {
 		log.Fatalln(err)
 	}

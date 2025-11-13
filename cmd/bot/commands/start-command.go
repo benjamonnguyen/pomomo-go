@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/benjamonnguyen/pomomo-go/cmd/bot/mydiscordgo"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -18,7 +18,7 @@ func HandleStartCommand(s *discordgo.Session, m *discordgo.InteractionCreate) {
 		return
 	}
 
-	r := mydiscordgo.NewInteractionResponder(s, m.Interaction)
+	r := dgutils.NewInteractionResponder(s, m.Interaction)
 	if err := r.DeferResponse(); err != nil {
 		log.Println(err)
 		return

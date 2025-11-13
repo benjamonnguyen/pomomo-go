@@ -1,4 +1,4 @@
-package mydiscordgo
+package dgutils
 
 import (
 	"github.com/bwmarrin/discordgo"

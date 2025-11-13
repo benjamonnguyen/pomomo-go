@@ -2,22 +2,43 @@ package pomomo
 
 import (
 	"time"
-
-	"github.com/google/uuid"
 )
 
+type DBRow struct {
+	ID        int
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Session struct {
-	Id      uuid.UUID
-	GuildId string
+	DBRow
+	GuildID   string
+	ChannelID string
+
+	//
+	StartedAt      time.Time
+	SecondsElapsed int
+	Status         uint8
+}
+
+type SessionStatus uint8
+
+const (
+	_ SessionStatus = iota
+	SessionRunning
+	SessionPaused
+	SessionEnded
+)
+
+type SessionSettings struct {
+	DBRow
+	SessionID          int
+	PomodoroDuration   time.Duration
+	ShortBreakDuration time.Duration
 
 	//
 	Pomodoro   time.Duration
 	ShortBreak time.Duration
 	LongBreak  time.Duration
 	Intervals  int
-
-	//
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	IsActive  bool
 }
