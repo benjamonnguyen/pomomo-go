@@ -26,6 +26,7 @@ func main() {
 	}
 
 	// db
+	log.Println("opening db at", config.DatabaseURL)
 	db, err := sqlite.Open(config.DatabaseURL)
 	if err != nil {
 		log.Fatalln("failed database open:", err)
