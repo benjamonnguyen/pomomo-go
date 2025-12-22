@@ -1,11 +1,10 @@
 package commands
 
 import (
-	"log"
-
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
 	"github.com/bwmarrin/discordgo"
+	"github.com/charmbracelet/log"
 )
 
 func HandleStartCommand(s *discordgo.Session, m *discordgo.InteractionCreate) {
@@ -20,25 +19,17 @@ func HandleStartCommand(s *discordgo.Session, m *discordgo.InteractionCreate) {
 
 	r := dgutils.NewInteractionResponder(s, m.Interaction)
 	if err := r.DeferResponse(); err != nil {
-		log.Println(err)
+		log.Error(err)
+		return
+	}
+
+	_, err := r.FollowupWithMessage("test")
+	if err != nil {
+		log.Error(err)
 		return
 	}
 
 	// create session TODO
 
 	// TODO HandleStartCommand
-	err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: "test",
-		},
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	// TODO handle err
-	// _ = s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
-	// 	Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	// })
 }

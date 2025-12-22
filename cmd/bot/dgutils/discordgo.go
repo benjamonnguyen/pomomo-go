@@ -1,3 +1,4 @@
+// Package dgutils contains utility wrappers around github.com/bwmarrin/discordgo
 package dgutils
 
 import (

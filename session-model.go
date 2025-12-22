@@ -1,25 +1,9 @@
 package pomomo
 
 import (
+	"context"
 	"time"
 )
-
-type DBRow struct {
-	ID        string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-}
-
-type Session struct {
-	DBRow
-	GuildID   string
-	ChannelID string
-
-	//
-	StartedAt      time.Time
-	SecondsElapsed int
-	Status         uint8
-}
 
 type SessionStatus uint8
 
@@ -30,9 +14,23 @@ const (
 	SessionEnded
 )
 
-type SessionSettings struct {
+type SessionRecord struct {
+	GuildID   string
+	ChannelID string
+
+	//
+	StartedAt      time.Time
+	SecondsElapsed int
+	Status         SessionStatus
+}
+
+type ExistingSessionRecord struct {
 	DBRow
-	SessionID          int
+	SessionRecord
+}
+
+type SessionSettingsRecord struct {
+	SessionID          string
 	PomodoroDuration   time.Duration
 	ShortBreakDuration time.Duration
 
@@ -41,4 +39,20 @@ type SessionSettings struct {
 	ShortBreak time.Duration
 	LongBreak  time.Duration
 	Intervals  int
+}
+
+type ExistingSessionSettingsRecord struct {
+	DBRow
+	SessionSettingsRecord
+}
+
+type SessionRepo interface {
+	InsertSession(context.Context, SessionRecord) (ExistingSessionRecord, error)
+	UpdateSession(ctx context.Context, id int, s SessionRecord) (ExistingSessionRecord, error)
+	DeleteSession(ctx context.Context, id int) (ExistingSessionRecord, error)
+	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
+	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
+	UpdateSetting(ctx context.Context, id int, s SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
+	DeleteSetting(ctx context.Context, id int) (ExistingSessionSettingsRecord, error)
+	GetSetting(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
 }

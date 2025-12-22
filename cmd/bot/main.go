@@ -7,7 +7,7 @@ import (
 	"syscall"
 
 	"github.com/benjamonnguyen/deadsimple/config"
-	"github.com/benjamonnguyen/deadsimple/database/sqlite"
+	dsdb "github.com/benjamonnguyen/deadsimple/database/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/commands"
 	"github.com/bwmarrin/discordgo"
@@ -33,7 +33,7 @@ func main() {
 
 	// db
 	log.Info("opening db", "url", dbURL)
-	db, err := sqlite.Open(dbURL)
+	db, err := dsdb.Open(dbURL)
 	if err != nil {
 		log.Fatal("failed database open", "err", err)
 	}
