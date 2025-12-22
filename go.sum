@@ -1,3 +1,5 @@
+github.com/Thiht/transactor v1.1.0 h1:+8tBw22C8a7KjVykw4BbeEmqQbEN6jzI/0YdazMPYMQ=
+github.com/Thiht/transactor v1.1.0/go.mod h1:/ToWJvAI8rvnZKq25E7bZ3NZKUz2ONBzIKdToV8PLCE=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/bwmarrin/discordgo v0.29.0 h1:FmWeXFaKUwrcL3Cx65c20bTRW+vOb6k8AnaP+EgjDno=

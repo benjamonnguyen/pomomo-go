@@ -30,9 +30,7 @@ type ExistingSessionRecord struct {
 }
 
 type SessionSettingsRecord struct {
-	SessionID          string
-	PomodoroDuration   time.Duration
-	ShortBreakDuration time.Duration
+	SessionID string
 
 	//
 	Pomodoro   time.Duration

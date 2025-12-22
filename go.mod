@@ -43,6 +43,7 @@ require (
 )
 
 require (
+	github.com/Thiht/transactor v1.1.0
 	github.com/gorilla/websocket v1.4.2 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
