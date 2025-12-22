@@ -10,6 +10,7 @@ import (
 
 	txStdLib "github.com/Thiht/transactor/stdlib"
 	"github.com/charmbracelet/log"
+	"github.com/google/uuid"
 
 	"github.com/benjamonnguyen/deadsimple/database/sqliteutil"
 	"github.com/benjamonnguyen/pomomo-go"
@@ -165,7 +166,7 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 	existingRecord := pomomo.ExistingSessionSettingsRecord{
 		SessionSettingsRecord: settings,
 		DBRow: pomomo.DBRow{
-			ID:        fmt.Sprintf("%d", now.UnixNano()), // Simple ID generation
+			ID:        uuid.NewString(),
 			CreatedAt: now,
 			UpdatedAt: now,
 		},

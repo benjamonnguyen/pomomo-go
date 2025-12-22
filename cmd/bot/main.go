@@ -6,10 +6,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	txStdLib "github.com/Thiht/transactor/stdlib"
 	"github.com/benjamonnguyen/deadsimple/config"
 	dsdb "github.com/benjamonnguyen/deadsimple/database/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/benjamonnguyen/pomomo-go/cmd/bot/commands"
+	"github.com/benjamonnguyen/pomomo-go/sqlite"
 	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
 	_ "modernc.org/sqlite"
@@ -44,14 +45,24 @@ func main() {
 		_ = db.Close()
 	}()
 
+	tx, dbGetter := txStdLib.NewTransactor(
+		db.DB(),
+		txStdLib.NestedTransactionsSavepoints,
+	)
+
+	// service objects
+	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
+	sessionManager := NewSessionManager(sessionRepo, tx)
+
 	// set up bot
 	bot, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// COMMAND HANDLERS
-	bot.AddHandler(commands.HandleStartCommand)
+	// command handler
+	cm := NewCommandHandler(sessionManager)
+	bot.AddHandler(cm.HandleStartCommand)
 
 	// open connection
 	if err := bot.Open(); err != nil {
