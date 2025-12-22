@@ -5,7 +5,7 @@ import (
 )
 
 type DBRow struct {
-	ID        int
+	ID        string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

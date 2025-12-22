@@ -1,53 +1,40 @@
 package pomomo
 
 import (
-	"flag"
-	"fmt"
-	"log"
 	"os"
-	"path"
-	"strings"
 
-	"github.com/joho/godotenv"
+	"github.com/benjamonnguyen/deadsimple/config"
+	"github.com/benjamonnguyen/deadsimple/config/env"
+	"github.com/charmbracelet/log"
 )
 
-type Config struct {
-	DatabaseURL string
-	BotName     string
-	BotToken    string
-}
+const (
+	DatabaseURLKey config.Key = "POMOMO_DB_URL"
+	BotNameKey     config.Key = "POMOMO_BOT_NAME"
+	BotTokenKey    config.Key = "POMOMO_BOT_TOKEN"
+)
 
-func LoadConfig() (Config, error) {
-	isProd := flag.Bool("p", false, "is production environment")
-	homeDir, _ := os.UserHomeDir()
-	envPath := ""
-	if *isProd {
-		log.Println("Environment: PROD")
-		envPath = path.Join(homeDir, ".pomomo", ".env")
-	} else {
-		log.Println("Environment: DEV")
-		envPath = path.Join(homeDir, ".pomomo", ".env.dev")
+func LoadConfig() (config.Config, error) {
+	entries := []env.Entry{
+		{
+			Key:      DatabaseURLKey,
+			Required: true,
+		},
+		{
+			Key:      BotNameKey,
+			Default:  "Pomomo",
+			Required: true,
+		},
+		{
+			Key:      BotTokenKey,
+			Required: true,
+		},
 	}
 
-	log.Println("loading config from", envPath)
-	_ = godotenv.Load(envPath)
-	config := Config{
-		DatabaseURL: os.Getenv("POMOMO_DB_PATH"),
-		BotName:     os.Getenv("POMOMO_BOT_NAME"),
-		BotToken:    os.Getenv("POMOMO_BOT_TOKEN"),
+	cfgPath := os.Getenv("POMOMO_CONFIG_PATH")
+	if cfgPath == "" {
+		log.Fatal("missing POMOMO_CONFIG_PATH")
 	}
-
-	if strings.HasPrefix(config.DatabaseURL, "~/") {
-		config.DatabaseURL = strings.Replace(config.DatabaseURL, "~", homeDir, 1)
-	}
-
-	if config.BotToken == "" {
-		return Config{}, fmt.Errorf("required environment variable: POMOMO_BOT_TOKEN")
-	}
-
-	if config.BotName == "" {
-		config.BotName = "Pomomo"
-	}
-
-	return config, nil
+	log.Info("loading config", "path", cfgPath)
+	return env.NewConfig(cfgPath, entries...)
 }

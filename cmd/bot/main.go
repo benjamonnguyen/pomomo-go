@@ -2,16 +2,16 @@ package main
 
 import (
 	"embed"
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/benjamonnguyen/deadsimple/config"
 	"github.com/benjamonnguyen/deadsimple/database/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/commands"
 	"github.com/bwmarrin/discordgo"
+	"github.com/charmbracelet/log"
 	_ "modernc.org/sqlite"
 )
 
@@ -20,28 +20,34 @@ var migrations embed.FS
 
 func main() {
 	// config
-	config, err := pomomo.LoadConfig()
+	cfg, err := pomomo.LoadConfig()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
+	var dbURL, botToken, botName string
+	panicif(cfg.GetMany([]config.Key{
+		pomomo.DatabaseURLKey,
+		pomomo.BotTokenKey,
+		pomomo.BotNameKey,
+	}, &dbURL, &botToken, &botName))
 
 	// db
-	log.Println("opening db at", config.DatabaseURL)
-	db, err := sqlite.Open(config.DatabaseURL)
+	log.Info("opening db", "url", dbURL)
+	db, err := sqlite.Open(dbURL)
 	if err != nil {
-		log.Fatalln("failed database open:", err)
+		log.Fatal("failed database open", "err", err)
 	}
 	if err := db.RunMigrations(migrations); err != nil {
-		log.Fatalln("failed migration:", err)
+		log.Fatal("failed migration", "err", err)
 	}
 	defer func() {
 		_ = db.Close()
 	}()
 
 	// set up bot
-	bot, err := discordgo.New("Bot " + config.BotToken)
+	bot, err := discordgo.New("Bot " + botToken)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 
 	// COMMAND HANDLERS
@@ -49,14 +55,20 @@ func main() {
 
 	// open connection
 	if err := bot.Open(); err != nil {
-		log.Fatalln("Error opening connection:", err)
+		log.Fatal("Error opening connection", "err", err)
 	}
-	defer bot.Close()
+	defer bot.Close() //nolint
 
 	//
-	fmt.Println(config.BotName + " bot is now running. Press CTRL-C to exit.")
+	log.Info(botName + " running. Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
-	fmt.Println("Terminating " + config.BotName)
+	log.Info("terminating " + botName)
+}
+
+func panicif(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
