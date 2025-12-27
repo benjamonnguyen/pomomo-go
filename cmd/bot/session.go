@@ -33,7 +33,7 @@ type startSessionRequest struct {
 }
 
 type SessionManager interface {
-	StartSession(context.Context, startSessionRequest) (Session, error)
+	StartSession(context.Context, startSessionRequest) (*Session, error)
 	// EndSession(context.Context, *Session)
 }
 
@@ -49,7 +49,7 @@ func (k cacheKey) validate() error {
 }
 
 type sessionManager struct {
-	cache map[cacheKey]Session
+	cache map[cacheKey]*Session
 	repo  pomomo.SessionRepo
 	tx    transactor.Transactor
 }
@@ -57,24 +57,24 @@ type sessionManager struct {
 func NewSessionManager(repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
 	// TODO repo.GetByStatus(...status) to populate cache
 	return &sessionManager{
-		cache: make(map[cacheKey]Session),
+		cache: make(map[cacheKey]*Session),
 		repo:  repo,
 		tx:    tx,
 	}
 }
 
-func (m *sessionManager) StartSession(ctx context.Context, req startSessionRequest) (Session, error) {
-	s := Session{
+func (m *sessionManager) StartSession(ctx context.Context, req startSessionRequest) (*Session, error) {
+	s := &Session{
 		channelID: req.channelID,
 		guildID:   req.guildID,
 		settings:  req.settings,
 	}
 	key := s.key()
 	if err := key.validate(); err != nil {
-		return s, err
+		return nil, err
 	}
 	if _, exists := m.cache[key]; exists {
-		return s, fmt.Errorf("session already exists for guild %s channel %s", req.guildID, req.channelID)
+		return nil, fmt.Errorf("session already exists for guild %s channel %s", req.guildID, req.channelID)
 	}
 
 	// Execute transaction
@@ -111,7 +111,7 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		return nil
 	})
 	if err != nil {
-		return s, fmt.Errorf("failed to start session: %w", err)
+		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 
 	return s, nil

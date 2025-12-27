@@ -11,8 +11,8 @@ type interactionResponder struct {
 	it *discordgo.Interaction
 }
 
-func NewInteractionResponder(s *discordgo.Session, it *discordgo.Interaction) interactionResponder {
-	return interactionResponder{
+func NewInteractionResponder(s *discordgo.Session, it *discordgo.Interaction) *interactionResponder {
+	return &interactionResponder{
 		s:  s,
 		it: it,
 	}
@@ -24,10 +24,8 @@ func (r interactionResponder) DeferResponse() error {
 	})
 }
 
-func (r interactionResponder) FollowupWithMessage(content string) (*discordgo.Message, error) {
-	return r.s.FollowupMessageCreate(r.it, false, &discordgo.WebhookParams{
-		Content: content,
-	})
+func (r interactionResponder) Followup(p discordgo.WebhookParams) (*discordgo.Message, error) {
+	return r.s.FollowupMessageCreate(r.it, false, &p)
 }
 
 func GetUser(m *discordgo.Interaction) *discordgo.User {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
@@ -10,9 +11,14 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+const (
+	skipButtonPrefix = "skip_"
+)
+
 type CommandHandler interface {
 	StartSession(s *discordgo.Session, m *discordgo.InteractionCreate)
-	EditSession(s *discordgo.Session, m *discordgo.InteractionCreate)
+	EditSettings(s *discordgo.Session, m *discordgo.InteractionCreate)
+	SkipInterval(s *discordgo.Session, m *discordgo.InteractionCreate)
 }
 
 type commandHandler struct {
@@ -82,18 +88,35 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	session, err := h.sessionManager.StartSession(timeout, req)
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := r.FollowupWithMessage("Failed to start session"); err != nil {
+		if _, err := r.Followup(discordgo.WebhookParams{Content: "Failed to start session"}); err != nil {
 			log.Error(err)
 		}
 		return
 	}
+	log.Debug("started session", "id", session.sessionID)
 
-	if _, err := r.FollowupWithMessage("Session started! Session ID: " + session.sessionID); err != nil {
+	// Create skip button
+	skipButton := discordgo.Button{
+		Label:    "Skip",
+		Style:    discordgo.PrimaryButton,
+		CustomID: skipButtonPrefix + session.sessionID,
+	}
+
+	actionRow := discordgo.ActionsRow{
+		Components: []discordgo.MessageComponent{skipButton},
+	}
+	msg, err := r.Followup(discordgo.WebhookParams{
+		Content:    fmt.Sprintf("%+v", session),
+		Components: []discordgo.MessageComponent{actionRow},
+	})
+	if err != nil {
 		log.Error(err)
 		return
 	}
+	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
+		log.Error("failed to pin message", "err", err)
+	}
 
-	// TODO skip button (to help with quickly testing)
 	// TODO SessionManager goroutine to update session
 	// TODO go next interval with sound (ffmpeg?)
 
@@ -101,6 +124,41 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	// TODO impl Stop
 }
 
-func (h *commandHandler) EditSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	// TODO EditSession
+func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.InteractionCreate) {
+	if m.Type != discordgo.InteractionMessageComponent {
+		return
+	}
+
+	data := m.MessageComponentData()
+	customID := data.CustomID
+
+	// Handle skip button
+	if len(customID) > len(skipButtonPrefix) && customID[:len(skipButtonPrefix)] == skipButtonPrefix {
+		sessionID := customID[len(skipButtonPrefix):]
+
+		// Acknowledge interaction within 3 seconds
+		err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseDeferredMessageUpdate,
+		})
+		if err != nil {
+			log.Error("failed to acknowledge button interaction", "err", err)
+			return
+		}
+
+		// TODO: Actually skip the interval using sessionManager
+		log.Debug("skip button pressed", "sessionID", sessionID)
+
+		// Update the original message to show interval was skipped
+		content := "Interval skipped! Session ID: " + sessionID
+		_, err = s.InteractionResponseEdit(m.Interaction, &discordgo.WebhookEdit{
+			Content: &content,
+		})
+		if err != nil {
+			log.Error("failed to update message after skip", "err", err)
+		}
+	}
+}
+
+func (h *commandHandler) EditSettings(s *discordgo.Session, m *discordgo.InteractionCreate) {
+	// TODO EditSettings
 }
