@@ -62,7 +62,7 @@ func main() {
 
 	// command handler
 	cm := NewCommandHandler(sessionManager)
-	bot.AddHandler(cm.HandleStartCommand)
+	bot.AddHandler(cm.StartSession)
 
 	// open connection
 	if err := bot.Open(); err != nil {
