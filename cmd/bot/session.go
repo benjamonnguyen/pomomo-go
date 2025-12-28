@@ -1,17 +1,19 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/Thiht/transactor"
-	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
+	"github.com/bwmarrin/discordgo"
 )
 
 type Session struct {
 	sessionID, guildID, channelID string
 	settings                      SessionSettings
+	stats                         SessionStats
+	currentInterval               SessionInterval
 	// TODO connection instance
 }
 
@@ -20,6 +22,18 @@ type SessionSettings struct {
 	intervals                       int
 }
 
+type SessionStats struct {
+	completedPomodoros int
+}
+
+type SessionInterval string
+
+const (
+	PomodoroInterval   SessionInterval = "Pomodoro"
+	ShortBreakInterval SessionInterval = "Short Break"
+	LongBreakInterval  SessionInterval = "Long Break"
+)
+
 func (s Session) key() cacheKey {
 	return cacheKey{
 		guildID:   s.guildID,
@@ -27,92 +41,84 @@ func (s Session) key() cacheKey {
 	}
 }
 
-type startSessionRequest struct {
-	guildID, channelID string
-	settings           SessionSettings
-}
-
-type SessionManager interface {
-	StartSession(context.Context, startSessionRequest) (*Session, error)
-	// EndSession(context.Context, *Session)
-}
-
-type cacheKey struct {
-	guildID, channelID string
-}
-
-func (k cacheKey) validate() error {
-	if k.guildID == "" || k.channelID == "" {
-		return fmt.Errorf("cacheKey requires guild and channel IDs")
-	}
-	return nil
-}
-
-type sessionManager struct {
-	cache map[cacheKey]*Session
-	repo  pomomo.SessionRepo
-	tx    transactor.Transactor
-}
-
-func NewSessionManager(repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
-	// TODO repo.GetByStatus(...status) to populate cache
-	return &sessionManager{
-		cache: make(map[cacheKey]*Session),
-		repo:  repo,
-		tx:    tx,
-	}
-}
-
-func (m *sessionManager) StartSession(ctx context.Context, req startSessionRequest) (*Session, error) {
-	s := &Session{
-		channelID: req.channelID,
-		guildID:   req.guildID,
-		settings:  req.settings,
-	}
-	key := s.key()
-	if err := key.validate(); err != nil {
-		return nil, err
-	}
-	if _, exists := m.cache[key]; exists {
-		return nil, fmt.Errorf("session already exists for guild %s channel %s", req.guildID, req.channelID)
-	}
-
-	// Execute transaction
-	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		// Insert session record
-		sessionRecord := pomomo.SessionRecord{
-			ChannelID: req.channelID,
-			GuildID:   req.guildID,
-			Status:    pomomo.SessionRunning,
-			StartedAt: time.Now(),
+func (s *Session) goNextInterval(shouldUpdateStats bool) {
+	// update stats
+	if shouldUpdateStats {
+		if s.currentInterval == PomodoroInterval {
+			s.stats.completedPomodoros++
 		}
-		existingSession, err := m.repo.InsertSession(ctx, sessionRecord)
-		if err != nil {
-			return fmt.Errorf("failed to insert session: %w", err)
-		}
-
-		// Insert session settings record
-		settingsRecord := pomomo.SessionSettingsRecord{
-			SessionID:  existingSession.ID,
-			Pomodoro:   req.settings.pomodoro,
-			ShortBreak: req.settings.shortBreak,
-			LongBreak:  req.settings.longBreak,
-			Intervals:  req.settings.intervals,
-		}
-		_, err = m.repo.InsertSettings(ctx, settingsRecord)
-		if err != nil {
-			return fmt.Errorf("failed to insert session settings: %w", err)
-		}
-
-		// Store in cache
-		s.sessionID = existingSession.ID
-		m.cache[key] = s
-
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to start session: %w", err)
 	}
 
-	return s, nil
+	// update interval
+	var next SessionInterval
+	switch s.currentInterval {
+	case PomodoroInterval:
+		// After pomodoro, decide break type based on completed pomodoros
+		if s.stats.completedPomodoros > 0 && s.stats.completedPomodoros%s.settings.intervals == 0 {
+			next = LongBreakInterval
+		} else {
+			next = ShortBreakInterval
+		}
+	case ShortBreakInterval, LongBreakInterval:
+		// After any break, next is pomodoro
+		next = PomodoroInterval
+	}
+	s.currentInterval = next
+}
+
+func (s Session) MessageComponents() []discordgo.MessageComponent {
+	// action row
+	skipButton := discordgo.Button{
+		Label: "Skip",
+		Style: discordgo.PrimaryButton,
+		CustomID: dgutils.InteractionID{
+			Type:      "skip",
+			GuildID:   s.guildID,
+			ChannelID: s.channelID,
+		}.ToCustomID(),
+	}
+
+	actionRow := discordgo.ActionsRow{
+		Components: []discordgo.MessageComponent{skipButton},
+	}
+
+	// settings
+	settingsTextParts := []string{
+		"### Session Settings",
+		fmt.Sprintf("%s: %d min", PomodoroInterval, int(s.settings.pomodoro.Minutes())),
+		fmt.Sprintf("%s: %d min", ShortBreakInterval, int(s.settings.shortBreak.Minutes())),
+		fmt.Sprintf("%s: %d min", LongBreakInterval, int(s.settings.longBreak.Minutes())),
+		fmt.Sprintf("%s: %d | %d", "Interval", s.stats.completedPomodoros%s.settings.intervals, s.settings.intervals),
+	}
+	switch s.currentInterval {
+	case PomodoroInterval:
+		settingsTextParts[1] = bold(settingsTextParts[1])
+	case ShortBreakInterval:
+		settingsTextParts[2] = bold(settingsTextParts[2])
+	case LongBreakInterval:
+		settingsTextParts[3] = bold(settingsTextParts[3])
+	}
+	settingsContainer := discordgo.Container{
+		Components: []discordgo.MessageComponent{
+			discordgo.TextDisplay{
+				Content: strings.Join(settingsTextParts, "\n"),
+			},
+		},
+		AccentColor: dgutils.ColorGreen.ToInt(),
+	}
+
+	//
+	return []discordgo.MessageComponent{
+		getStartMessage(),
+		settingsContainer,
+		actionRow,
+	}
+}
+
+func getStartMessage() discordgo.MessageComponent {
+	return dgutils.TextDisplay("It's productivity o'clock!")
+}
+
+func bold(s string) string {
+	return fmt.Sprintf("**%s**", s)
 }

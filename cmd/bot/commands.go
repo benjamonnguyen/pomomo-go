@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
@@ -12,13 +11,15 @@ import (
 )
 
 const (
-	skipButtonPrefix = "skip_"
+	defaultErrorMsg = "Looks like something went wrong. Try again in a bit or reach out to support."
 )
 
 type CommandHandler interface {
 	StartSession(s *discordgo.Session, m *discordgo.InteractionCreate)
-	EditSettings(s *discordgo.Session, m *discordgo.InteractionCreate)
 	SkipInterval(s *discordgo.Session, m *discordgo.InteractionCreate)
+	EndSession(s *discordgo.Session, m *discordgo.InteractionCreate)
+	TogglePause(s *discordgo.Session, m *discordgo.InteractionCreate)
+	JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate)
 }
 
 type commandHandler struct {
@@ -45,8 +46,9 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	r := dgutils.NewInteractionResponder(s, m.Interaction)
-	if err := r.DeferResponse(); err != nil {
+	r := dgutils.NewDeferredResponder(s, m.Interaction)
+	followup, err := r.DeferMessageCreate()
+	if err != nil {
 		log.Error(err)
 		return
 	}
@@ -88,37 +90,26 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	session, err := h.sessionManager.StartSession(timeout, req)
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := r.Followup(discordgo.WebhookParams{Content: "Failed to start session"}); err != nil {
+		if _, err := followup(dgutils.TextDisplay("Failed to start session")); err != nil {
 			log.Error(err)
 		}
 		return
 	}
 	log.Debug("started session", "id", session.sessionID)
 
-	// Create skip button
-	skipButton := discordgo.Button{
-		Label:    "Skip",
-		Style:    discordgo.PrimaryButton,
-		CustomID: skipButtonPrefix + session.sessionID,
-	}
-
-	actionRow := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{skipButton},
-	}
-	msg, err := r.Followup(discordgo.WebhookParams{
-		Content:    fmt.Sprintf("%+v", session),
-		Components: []discordgo.MessageComponent{actionRow},
-	})
+	msg, err := followup(session.MessageComponents()...)
 	if err != nil {
 		log.Error(err)
 		return
 	}
+
 	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
 		log.Error("failed to pin message", "err", err)
 	}
 
-	// TODO SessionManager goroutine to update session
+	// TODO SessionManager goroutine to update session msg info and go next
 	// TODO go next interval with sound (ffmpeg?)
+	// TODO SessionManager goroutine to update stats with lesser frequency
 
 	// TODO impl Resume/Pause
 	// TODO impl Stop
@@ -130,35 +121,52 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	data := m.MessageComponentData()
-	customID := data.CustomID
+	id, err := dgutils.FromCustomID(data.CustomID)
+	if err != nil {
+		return
+	}
+	if id.Type != "skip" {
+		return
+	}
 
-	// Handle skip button
-	if len(customID) > len(skipButtonPrefix) && customID[:len(skipButtonPrefix)] == skipButtonPrefix {
-		sessionID := customID[len(skipButtonPrefix):]
+	timeout, c := h.timeout()
+	defer c()
 
-		// Acknowledge interaction within 3 seconds
-		err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseDeferredMessageUpdate,
-		})
-		if err != nil {
-			log.Error("failed to acknowledge button interaction", "err", err)
-			return
+	r := dgutils.NewDeferredResponder(s, m.Interaction)
+	followup, err := r.DeferMessageUpdate()
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	session, err := h.sessionManager.SkipInterval(timeout, cacheKey{
+		guildID:   id.GuildID,
+		channelID: id.ChannelID,
+	})
+	if err != nil {
+		log.Error("failed to skip interval", "err", err)
+		components := append(session.MessageComponents(), dgutils.TextDisplay(defaultErrorMsg))
+		if _, err := followup(components...); err != nil {
+			log.Error(err)
 		}
+		return
+	}
 
-		// TODO: Actually skip the interval using sessionManager
-		log.Debug("skip button pressed", "sessionID", sessionID)
-
-		// Update the original message to show interval was skipped
-		content := "Interval skipped! Session ID: " + sessionID
-		_, err = s.InteractionResponseEdit(m.Interaction, &discordgo.WebhookEdit{
-			Content: &content,
-		})
-		if err != nil {
-			log.Error("failed to update message after skip", "err", err)
-		}
+	_, err = followup(session.MessageComponents()...)
+	if err != nil {
+		log.Error(err)
+		return
 	}
 }
 
-func (h *commandHandler) EditSettings(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	// TODO EditSettings
+func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
+	panic("not implemented")
+}
+
+func (h *commandHandler) TogglePause(s *discordgo.Session, m *discordgo.InteractionCreate) {
+	panic("not implemented")
+}
+
+func (h *commandHandler) JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
+	panic("not implemented")
 }

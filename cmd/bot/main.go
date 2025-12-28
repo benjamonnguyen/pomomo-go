@@ -20,6 +20,9 @@ import (
 var migrations embed.FS
 
 func main() {
+	// Set global logger to debug level
+	log.SetLevel(log.DebugLevel)
+
 	// config
 	cfg, err := pomomo.LoadConfig()
 	if err != nil {

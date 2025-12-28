@@ -10,6 +10,9 @@ import (
 )
 
 func main() {
+	// Set global logger to debug level
+	log.SetLevel(log.DebugLevel)
+
 	cfg, err := pomomo.LoadConfig()
 	if err != nil {
 		log.Fatal(err)

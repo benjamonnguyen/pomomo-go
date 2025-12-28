@@ -96,8 +96,8 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 	return existingRecord, nil
 }
 
-func (r *sessionRepo) UpdateSession(ctx context.Context, id int, s pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error) {
-	existing, err := r.GetSession(ctx, fmt.Sprintf("%d", id))
+func (r *sessionRepo) UpdateSession(ctx context.Context, id string, s pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error) {
+	existing, err := r.GetSession(ctx, id)
 	if err != nil {
 		return existing, err
 	}
@@ -125,8 +125,8 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id int, s pomomo.Sessio
 	return existing, nil
 }
 
-func (r *sessionRepo) DeleteSession(ctx context.Context, id int) (pomomo.ExistingSessionRecord, error) {
-	existing, err := r.GetSession(ctx, fmt.Sprintf("%d", id))
+func (r *sessionRepo) DeleteSession(ctx context.Context, id string) (pomomo.ExistingSessionRecord, error) {
+	existing, err := r.GetSession(ctx, id)
 	if err != nil {
 		return pomomo.ExistingSessionRecord{}, err
 	}
@@ -193,37 +193,8 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 	return existingRecord, nil
 }
 
-func (r *sessionRepo) UpdateSetting(ctx context.Context, id int, s pomomo.SessionSettingsRecord) (pomomo.ExistingSessionSettingsRecord, error) {
-	existing, err := r.GetSetting(ctx, fmt.Sprintf("%d", id))
-	if err != nil {
-		return existing, err
-	}
-
-	existing.SessionSettingsRecord = s
-	existing.UpdatedAt = time.Now()
-	e := mapToSessionSettingsEntity(existing)
-
-	query := "UPDATE session_settings SET session_id = ?, pomodoro_duration = ?, short_break_duration = ?, long_break_duration = ?, intervals = ?, updated_at = ? WHERE id = ?"
-	args := []any{
-		e.SessionID,
-		e.PomodoroDuration,
-		e.ShortBreakDuration,
-		e.LongBreakDuration,
-		e.Intervals,
-		e.UpdatedAt,
-		e.ID,
-	}
-	r.l.Debug("updating session setting", "query", query, "args", args)
-	_, err = r.dbGetter(ctx).ExecContext(ctx, query, args...)
-	if err != nil {
-		return pomomo.ExistingSessionSettingsRecord{}, err
-	}
-
-	return existing, nil
-}
-
-func (r *sessionRepo) DeleteSetting(ctx context.Context, id int) (pomomo.ExistingSessionSettingsRecord, error) {
-	existing, err := r.GetSetting(ctx, fmt.Sprintf("%d", id))
+func (r *sessionRepo) DeleteSettings(ctx context.Context, id string) (pomomo.ExistingSessionSettingsRecord, error) {
+	existing, err := r.GetSettings(ctx, id)
 	if err != nil {
 		return pomomo.ExistingSessionSettingsRecord{}, err
 	}
@@ -238,7 +209,7 @@ func (r *sessionRepo) DeleteSetting(ctx context.Context, id int) (pomomo.Existin
 	return existing, nil
 }
 
-func (r *sessionRepo) GetSetting(ctx context.Context, id string) (pomomo.ExistingSessionSettingsRecord, error) {
+func (r *sessionRepo) GetSettings(ctx context.Context, id string) (pomomo.ExistingSessionSettingsRecord, error) {
 	if id == "" {
 		return pomomo.ExistingSessionSettingsRecord{}, fmt.Errorf("provide id")
 	}

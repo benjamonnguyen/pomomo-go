@@ -46,11 +46,10 @@ type ExistingSessionSettingsRecord struct {
 
 type SessionRepo interface {
 	InsertSession(context.Context, SessionRecord) (ExistingSessionRecord, error)
-	UpdateSession(ctx context.Context, id int, s SessionRecord) (ExistingSessionRecord, error)
-	DeleteSession(ctx context.Context, id int) (ExistingSessionRecord, error)
+	UpdateSession(ctx context.Context, id string, s SessionRecord) (ExistingSessionRecord, error)
+	DeleteSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
-	UpdateSetting(ctx context.Context, id int, s SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
-	DeleteSetting(ctx context.Context, id int) (ExistingSessionSettingsRecord, error)
-	GetSetting(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
+	DeleteSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
+	GetSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
 }
