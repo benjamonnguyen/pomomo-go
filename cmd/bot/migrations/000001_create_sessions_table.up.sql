@@ -2,8 +2,9 @@ CREATE TABLE sessions (
     id TEXT PRIMARY KEY,
     guild_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
-    started_at INTEGER NOT NULL,
-    seconds_elapsed INTEGER NOT NULL,
+    message_id TEXT NOT NULL,
+    interval_started_at INTEGER NOT NULL,
+    current_interval INTEGER NOT NULL,
     status INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL

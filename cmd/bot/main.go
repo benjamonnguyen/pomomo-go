@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"os"
 	"os/signal"
@@ -20,8 +21,10 @@ import (
 var migrations embed.FS
 
 func main() {
-	// Set global logger to debug level
+	// logger
 	log.SetLevel(log.DebugLevel)
+	log.SetReportCaller(true)
+	topCtx, c := context.WithCancel(context.Background())
 
 	// config
 	cfg, err := pomomo.LoadConfig()
@@ -53,18 +56,18 @@ func main() {
 		txStdLib.NestedTransactionsSavepoints,
 	)
 
-	// service objects
-	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
-	sessionManager := NewSessionManager(sessionRepo, tx)
-
 	// set up bot
 	bot, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// service objects
+	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
+	sessionManager := NewSessionManager(sessionRepo, tx, bot)
+
 	// command handler
-	cm := NewCommandHandler(sessionManager)
+	cm := NewCommandHandler(topCtx, sessionManager)
 	bot.AddHandler(cm.StartSession)
 	bot.AddHandler(cm.SkipInterval)
 
@@ -80,6 +83,8 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	log.Info("terminating " + botName)
+	c()
+	sessionManager.Shutdown()
 }
 
 func panicif(err error) {

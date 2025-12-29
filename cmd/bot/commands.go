@@ -23,17 +23,19 @@ type CommandHandler interface {
 }
 
 type commandHandler struct {
+	parentCtx      context.Context
 	sessionManager SessionManager
 }
 
-func NewCommandHandler(sm SessionManager) CommandHandler {
+func NewCommandHandler(parentCtx context.Context, sm SessionManager) CommandHandler {
 	return &commandHandler{
+		parentCtx:      parentCtx,
 		sessionManager: sm,
 	}
 }
 
 func (h *commandHandler) timeout() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 10*time.Second)
+	return context.WithTimeout(h.parentCtx, 10*time.Second)
 }
 
 func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
@@ -43,13 +45,6 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 
 	data := m.ApplicationCommandData()
 	if data.Name != pomomo.StartCommand.Name {
-		return
-	}
-
-	r := dgutils.NewDeferredResponder(s, m.Interaction)
-	followup, err := r.DeferMessageCreate()
-	if err != nil {
-		log.Error(err)
 		return
 	}
 
@@ -81,27 +76,40 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		}
 	}
 
-	req := startSessionRequest{
-		guildID:   m.GuildID,
-		channelID: m.ChannelID,
-		settings:  settings,
+	if h.sessionManager.HasSession(m.GuildID, m.ChannelID) {
+		if _, err := dgutils.Respond(s, m.Interaction, false, dgutils.TextDisplay("This channel already has an active session.")); err != nil {
+			log.Error(err)
+		}
+		return
 	}
 
-	session, err := h.sessionManager.StartSession(timeout, req)
+	session := Session{
+		channelID:         m.ChannelID,
+		guildID:           m.GuildID,
+		settings:          settings,
+		currentInterval:   PomodoroInterval,
+		intervalStartedAt: time.Now(),
+	}
+	msg, err := dgutils.Respond(s, m.Interaction, true, session.MessageComponents()...)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	session, err = h.sessionManager.StartSession(timeout, startSessionRequest{
+		channelID: m.ChannelID,
+		guildID:   m.GuildID,
+		messageID: msg.ID,
+		settings:  settings,
+	})
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := followup(dgutils.TextDisplay("Failed to start session")); err != nil {
+		if _, err := dgutils.EditResponse(s, m.Interaction, dgutils.TextDisplay("Failed to start session.")); err != nil {
 			log.Error(err)
 		}
 		return
 	}
 	log.Debug("started session", "id", session.sessionID)
-
-	msg, err := followup(session.MessageComponents()...)
-	if err != nil {
-		log.Error(err)
-		return
-	}
 
 	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
 		log.Error("failed to pin message", "err", err)
@@ -132,8 +140,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 	timeout, c := h.timeout()
 	defer c()
 
-	r := dgutils.NewDeferredResponder(s, m.Interaction)
-	followup, err := r.DeferMessageUpdate()
+	followup, err := dgutils.DeferMessageUpdate(s, m.Interaction)
 	if err != nil {
 		log.Error(err)
 		return
@@ -151,6 +158,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		}
 		return
 	}
+	log.Debug("skipped interval", "new", session.currentInterval)
 
 	_, err = followup(session.MessageComponents()...)
 	if err != nil {

@@ -8,43 +8,64 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// TODO responder retries
-type deferredResponder struct {
-	s  *discordgo.Session
-	it *discordgo.Interaction
+func EditChannelMessage(s *discordgo.Session, channelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
+	return s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+		Channel:    channelID,
+		ID:         messageID,
+		Flags:      discordgo.MessageFlagsIsComponentsV2,
+		Components: &components,
+	})
 }
 
-func NewDeferredResponder(s *discordgo.Session, it *discordgo.Interaction) *deferredResponder {
-	return &deferredResponder{
-		s:  s,
-		it: it,
+// Respond returns message only when wait == true
+func Respond(s *discordgo.Session, it *discordgo.Interaction, wait bool, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
+	if err := s.InteractionRespond(it, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags:      discordgo.MessageFlagsIsComponentsV2,
+			Components: components,
+		},
+	}); err != nil {
+		return nil, err
 	}
+	if wait {
+		return s.InteractionResponse(it)
+	}
+	return nil, nil
 }
+
+func EditResponse(s *discordgo.Session, it *discordgo.Interaction, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
+	return s.InteractionResponseEdit(it, &discordgo.WebhookEdit{
+		Components: &components,
+	})
+}
+
+// TODO responder retries
 
 type followup func(components ...discordgo.MessageComponent) (*discordgo.Message, error)
 
-func (r *deferredResponder) DeferMessageCreate() (followup, error) {
-	if err := r.s.InteractionRespond(r.it, &discordgo.InteractionResponse{
+func DeferMessageCreate(s *discordgo.Session, it *discordgo.Interaction) (followup, error) {
+	if err := s.InteractionRespond(it, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	}); err != nil {
 		return nil, err
 	}
 	return func(components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-		return r.s.FollowupMessageCreate(r.it, true, &discordgo.WebhookParams{
+		return s.FollowupMessageCreate(it, true, &discordgo.WebhookParams{
 			Components: components,
 			Flags:      discordgo.MessageFlagsIsComponentsV2,
 		})
 	}, nil
 }
 
-func (r *deferredResponder) DeferMessageUpdate() (followup, error) {
-	if err := r.s.InteractionRespond(r.it, &discordgo.InteractionResponse{
+func DeferMessageUpdate(s *discordgo.Session, it *discordgo.Interaction) (followup, error) {
+	if err := s.InteractionRespond(it, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	}); err != nil {
 		return nil, err
 	}
 	return func(components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-		return r.s.FollowupMessageEdit(r.it, r.it.Message.ID, &discordgo.WebhookEdit{
+		return s.FollowupMessageEdit(it, it.Message.ID, &discordgo.WebhookEdit{
 			Components: &components,
 		})
 	}, nil

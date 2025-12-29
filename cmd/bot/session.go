@@ -2,19 +2,38 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
 	"github.com/bwmarrin/discordgo"
 )
 
+const (
+	timerBarFilledChar = "⣶"
+	timerBarEmptyChar  = "⡀"
+)
+
 type Session struct {
 	sessionID, guildID, channelID string
+	messageID                     string // Discord message ID
 	settings                      SessionSettings
 	stats                         SessionStats
 	currentInterval               SessionInterval
+	intervalStartedAt             time.Time // When current interval started
 	// TODO connection instance
+}
+
+func (s Session) toRecord() pomomo.SessionRecord {
+	return pomomo.SessionRecord{
+		GuildID:           s.guildID,
+		ChannelID:         s.channelID,
+		MessageID:         s.messageID,
+		CurrentInterval:   s.currentInterval.enum(),
+		IntervalStartedAt: s.intervalStartedAt,
+	}
 }
 
 type SessionSettings struct {
@@ -33,6 +52,19 @@ const (
 	ShortBreakInterval SessionInterval = "Short Break"
 	LongBreakInterval  SessionInterval = "Long Break"
 )
+
+func (i SessionInterval) enum() pomomo.SessionInterval {
+	switch i {
+	case PomodoroInterval:
+		return pomomo.PomodoroInterval
+	case ShortBreakInterval:
+		return pomomo.ShortBreakInterval
+	case LongBreakInterval:
+		return pomomo.LongBreakInterval
+	default:
+		panic("no matching enum for SessionInterval: " + string(i))
+	}
+}
 
 func (s Session) key() cacheKey {
 	return cacheKey{
@@ -64,6 +96,37 @@ func (s *Session) goNextInterval(shouldUpdateStats bool) {
 		next = PomodoroInterval
 	}
 	s.currentInterval = next
+	s.intervalStartedAt = time.Now()
+}
+
+func (s Session) RemainingTime() time.Duration {
+	return s.CurrentDuration() - time.Since(s.intervalStartedAt)
+}
+
+func (s Session) CurrentDuration() time.Duration {
+	switch s.currentInterval {
+	case PomodoroInterval:
+		return s.settings.pomodoro
+	case ShortBreakInterval:
+		return s.settings.shortBreak
+	case LongBreakInterval:
+		return s.settings.longBreak
+	default:
+		panic("unexpected interval state")
+	}
+}
+
+func (s Session) TimerBar() string {
+	const length = 20
+	filledChar := timerBarFilledChar
+	emptyChar := timerBarEmptyChar
+	remaining := s.RemainingTime().Minutes()
+	if remaining <= 0 {
+		return strings.Repeat(emptyChar, length)
+	}
+	percentage := remaining / s.CurrentDuration().Minutes()
+	filled := min(int(math.Round(percentage*length*10)/10), length)
+	return strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, length-filled)
 }
 
 func (s Session) MessageComponents() []discordgo.MessageComponent {
@@ -92,11 +155,11 @@ func (s Session) MessageComponents() []discordgo.MessageComponent {
 	}
 	switch s.currentInterval {
 	case PomodoroInterval:
-		settingsTextParts[1] = bold(settingsTextParts[1])
+		settingsTextParts[1] = fmt.Sprintf("**%s**\n%s", settingsTextParts[1], s.TimerBar())
 	case ShortBreakInterval:
-		settingsTextParts[2] = bold(settingsTextParts[2])
+		settingsTextParts[2] = fmt.Sprintf("**%s**\n%s", settingsTextParts[2], s.TimerBar())
 	case LongBreakInterval:
-		settingsTextParts[3] = bold(settingsTextParts[3])
+		settingsTextParts[3] = fmt.Sprintf("**%s**\n%s", settingsTextParts[3], s.TimerBar())
 	}
 	settingsContainer := discordgo.Container{
 		Components: []discordgo.MessageComponent{
@@ -117,8 +180,4 @@ func (s Session) MessageComponents() []discordgo.MessageComponent {
 
 func getStartMessage() discordgo.MessageComponent {
 	return dgutils.TextDisplay("It's productivity o'clock!")
-}
-
-func bold(s string) string {
-	return fmt.Sprintf("**%s**", s)
 }

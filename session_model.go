@@ -14,14 +14,24 @@ const (
 	SessionEnded
 )
 
+type SessionInterval uint8
+
+const (
+	_ SessionInterval = iota
+	PomodoroInterval
+	ShortBreakInterval
+	LongBreakInterval
+)
+
 type SessionRecord struct {
 	GuildID   string
 	ChannelID string
+	MessageID string
 
 	//
-	StartedAt      time.Time
-	SecondsElapsed int
-	Status         SessionStatus
+	IntervalStartedAt time.Time
+	CurrentInterval   SessionInterval
+	Status            SessionStatus
 }
 
 type ExistingSessionRecord struct {
