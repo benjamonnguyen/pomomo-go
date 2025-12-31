@@ -10,7 +10,6 @@ import (
 
 	txStdLib "github.com/Thiht/transactor/stdlib"
 	"github.com/charmbracelet/log"
-	"github.com/google/uuid"
 
 	"github.com/benjamonnguyen/deadsimple/database/sqliteutil"
 	"github.com/benjamonnguyen/pomomo-go"
@@ -169,7 +168,7 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 	existingRecord := pomomo.ExistingSessionSettingsRecord{
 		SessionSettingsRecord: settings,
 		DBRow: pomomo.DBRow{
-			ID:        uuid.NewString(),
+			ID:        settings.SessionID,
 			CreatedAt: now,
 			UpdatedAt: now,
 		},
@@ -225,6 +224,7 @@ func (r *sessionRepo) GetSettings(ctx context.Context, id string) (pomomo.Existi
 
 	return extractSessionSettings(row)
 }
+
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity

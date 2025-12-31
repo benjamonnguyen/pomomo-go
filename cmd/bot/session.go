@@ -23,6 +23,7 @@ type Session struct {
 	stats                         SessionStats
 	currentInterval               SessionInterval
 	intervalStartedAt             time.Time // When current interval started
+	status                        pomomo.SessionStatus
 	// TODO connection instance
 }
 
@@ -33,6 +34,7 @@ func (s Session) toRecord() pomomo.SessionRecord {
 		MessageID:         s.messageID,
 		CurrentInterval:   s.currentInterval.enum(),
 		IntervalStartedAt: s.intervalStartedAt,
+		Status:            s.status,
 	}
 }
 
@@ -130,6 +132,11 @@ func (s Session) TimerBar() string {
 }
 
 func (s Session) MessageComponents() []discordgo.MessageComponent {
+	if s.status == pomomo.SessionEnded {
+		return []discordgo.MessageComponent{
+			getEndMessage(),
+		}
+	}
 	// action row
 	skipButton := discordgo.Button{
 		Label: "Skip",
@@ -140,9 +147,18 @@ func (s Session) MessageComponents() []discordgo.MessageComponent {
 			ChannelID: s.channelID,
 		}.ToCustomID(),
 	}
+	endButton := discordgo.Button{
+		Label: "End",
+		Style: discordgo.DangerButton,
+		CustomID: dgutils.InteractionID{
+			Type:      "end",
+			GuildID:   s.guildID,
+			ChannelID: s.channelID,
+		}.ToCustomID(),
+	}
 
 	actionRow := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{skipButton},
+		Components: []discordgo.MessageComponent{skipButton, endButton},
 	}
 
 	// settings
@@ -161,13 +177,17 @@ func (s Session) MessageComponents() []discordgo.MessageComponent {
 	case LongBreakInterval:
 		settingsTextParts[3] = fmt.Sprintf("**%s**\n%s", settingsTextParts[3], s.TimerBar())
 	}
+	accentColor := dgutils.ColorGreen
+	if s.status == pomomo.SessionPaused {
+		accentColor = dgutils.ColorLightGrey
+	}
 	settingsContainer := discordgo.Container{
 		Components: []discordgo.MessageComponent{
 			discordgo.TextDisplay{
 				Content: strings.Join(settingsTextParts, "\n"),
 			},
 		},
-		AccentColor: dgutils.ColorGreen.ToInt(),
+		AccentColor: accentColor.ToInt(),
 	}
 
 	//
@@ -180,4 +200,9 @@ func (s Session) MessageComponents() []discordgo.MessageComponent {
 
 func getStartMessage() discordgo.MessageComponent {
 	return dgutils.TextDisplay("It's productivity o'clock!")
+}
+
+func getEndMessage() discordgo.MessageComponent {
+	// TODO display stats in end message
+	return dgutils.TextDisplay("Good stuff!")
 }

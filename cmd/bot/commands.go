@@ -89,6 +89,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		settings:          settings,
 		currentInterval:   PomodoroInterval,
 		intervalStartedAt: time.Now(),
+		status:            pomomo.SessionRunning,
 	}
 	msg, err := dgutils.Respond(s, m.Interaction, true, session.MessageComponents()...)
 	if err != nil {
@@ -168,7 +169,52 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 }
 
 func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	panic("not implemented")
+	if m.Type != discordgo.InteractionMessageComponent {
+		return
+	}
+
+	data := m.MessageComponentData()
+	id, err := dgutils.FromCustomID(data.CustomID)
+	if err != nil {
+		return
+	}
+	if id.Type != "end" {
+		return
+	}
+
+	timeout, c := h.timeout()
+	defer c()
+
+	followup, err := dgutils.DeferMessageUpdate(s, m.Interaction)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	session, err := h.sessionManager.EndSession(timeout, cacheKey{
+		guildID:   id.GuildID,
+		channelID: id.ChannelID,
+	})
+	if err != nil {
+		log.Error("failed to end session", "err", err)
+		components := append(session.MessageComponents(), dgutils.TextDisplay(defaultErrorMsg))
+		if _, err := followup(components...); err != nil {
+			log.Error(err)
+		}
+		return
+	}
+	log.Debug("ended session", "id", session.sessionID)
+
+	_, err = followup(session.MessageComponents()...)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	// Unpin the session message
+	if err := s.ChannelMessageUnpin(id.ChannelID, m.Message.ID); err != nil {
+		log.Error("failed to unpin message", "customID", id.ToCustomID(), "message", m.Message.ID, "err", err)
+	}
 }
 
 func (h *commandHandler) TogglePause(s *discordgo.Session, m *discordgo.InteractionCreate) {

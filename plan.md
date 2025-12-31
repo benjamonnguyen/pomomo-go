@@ -16,10 +16,12 @@ Create helper function withRetries(max int, f func() bool) error
 2. **Wait for completion**: Use `sync.WaitGroup` to ensure current tick finishes
 3. **Cleanup**: Release locks, close channels
 
-- sessionManager.EndSession()
-  - button
-  - unpin message
-  - remove from cache
+- refactor to disgo
 - persistence
 - Populate cache on startup
+  - if stale, best effort deletion of message
 - sound alert
+- autoshush
+
+- handle interactions from stale messages
+- stats

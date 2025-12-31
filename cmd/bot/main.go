@@ -71,6 +71,7 @@ func main() {
 	cm := NewCommandHandler(topCtx, sessionManager)
 	bot.AddHandler(cm.StartSession)
 	bot.AddHandler(cm.SkipInterval)
+	bot.AddHandler(cm.EndSession)
 
 	// open connection
 	if err := bot.Open(); err != nil {

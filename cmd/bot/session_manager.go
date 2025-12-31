@@ -23,7 +23,7 @@ type startSessionRequest struct {
 type SessionManager interface {
 	HasSession(guildID, channelID string) bool
 	StartSession(context.Context, startSessionRequest) (Session, error)
-	// EndSession(context.Context, *Session) should delete settings
+	EndSession(context.Context, cacheKey) (Session, error)
 	SkipInterval(context.Context, cacheKey) (Session, error)
 	Shutdown() error
 }
@@ -163,6 +163,7 @@ func (m *sessionManager) StartSession(parentCtx context.Context, req startSessio
 		settings:          req.settings,
 		currentInterval:   PomodoroInterval,
 		intervalStartedAt: time.Now(),
+		status:            pomomo.SessionRunning,
 	}
 	key := session.key()
 	if err := key.validate(); err != nil {
@@ -238,6 +239,37 @@ func (m *sessionManager) SkipInterval(ctx context.Context, key cacheKey) (Sessio
 	// })
 
 	return *o.session, nil
+}
+
+func (m *sessionManager) EndSession(ctx context.Context, key cacheKey) (Session, error) {
+	o, unlock := m.getCacheObject(key)
+	if o == nil {
+		return Session{}, fmt.Errorf("session not found for key: %v", key)
+	}
+
+	session := *o.session
+	session.status = pomomo.SessionEnded
+	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+		record := session.toRecord()
+		_, err := m.repo.UpdateSession(ctx, session.sessionID, record)
+		if err != nil {
+			return fmt.Errorf("failed to update session status: %w", err)
+		}
+
+		_, err = m.repo.DeleteSettings(ctx, session.sessionID)
+		if err != nil {
+			return fmt.Errorf("failed to delete settings: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		unlock()
+		return Session{}, fmt.Errorf("failed to end session: %w", err)
+	}
+	unlock()
+
+	m.deleteSession(key)
+	return session, nil
 }
 
 func (m *sessionManager) Shutdown() error {
