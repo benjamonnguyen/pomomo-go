@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	txStdLib "github.com/Thiht/transactor/stdlib"
 	"github.com/benjamonnguyen/deadsimple/config"
@@ -76,15 +77,22 @@ func main() {
 		log.Fatal("Error opening connection", "err", err)
 	}
 	defer bot.Close() //nolint
-
-	//
 	log.Info(botName + " running. Press CTRL-C to exit.")
+
+	// graceful shutdown
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	log.Info("terminating " + botName)
 	c()
-	sessionManager.Shutdown()
+	shutdownTimeout, c := context.WithTimeout(context.Background(), time.Minute)
+	go func() {
+		if err := sessionManager.Shutdown(); err != nil {
+			log.Error(err)
+		}
+		c()
+	}()
+	<-shutdownTimeout.Done()
 }
 
 func panicif(err error) {

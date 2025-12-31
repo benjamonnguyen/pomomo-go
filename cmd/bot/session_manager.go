@@ -25,7 +25,7 @@ type SessionManager interface {
 	StartSession(context.Context, startSessionRequest) (Session, error)
 	// EndSession(context.Context, *Session) should delete settings
 	SkipInterval(context.Context, cacheKey) (Session, error)
-	Shutdown()
+	Shutdown() error
 }
 
 type cacheKey struct {
@@ -240,7 +240,7 @@ func (m *sessionManager) SkipInterval(ctx context.Context, key cacheKey) (Sessio
 	return *o.session, nil
 }
 
-func (m *sessionManager) Shutdown() {
+func (m *sessionManager) Shutdown() error {
 	// Collect all cache keys
 	m.cacheMu.RLock()
 	keys := make([]cacheKey, 0, len(m.cache))
@@ -256,4 +256,5 @@ func (m *sessionManager) Shutdown() {
 
 	// Wait for all timer goroutines to exit
 	m.wg.Wait()
+	return nil
 }
