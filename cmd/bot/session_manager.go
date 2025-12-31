@@ -132,12 +132,19 @@ func (m *sessionManager) startIntervalTimer(key cacheKey) error {
 			if o.session.RemainingTime() <= 0 {
 				o.session.goNextInterval(true)
 			}
-			_, err := dgutils.EditChannelMessage(m.discordSession, o.session.channelID, o.session.messageID, o.session.MessageComponents()...)
+			err := m.tx.WithinTransaction(context.Background(), func(ctx context.Context) error {
+				record := o.session.toRecord()
+				_, err := m.repo.UpdateSession(ctx, o.session.sessionID, record)
+				return err
+			})
+			unlock()
+			if err != nil {
+				log.Error("failed to update session interval in timer", "sessionID", o.session.sessionID, "err", err)
+			}
+			_, err = dgutils.EditChannelMessage(m.discordSession, o.session.channelID, o.session.messageID, o.session.MessageComponents()...)
 			if err != nil {
 				log.Error("failed to edit channel message", "channelID", o.session.channelID, "messageID", o.session.messageID, "err", err)
 			}
-			// TODO update db
-			unlock()
 		}
 	})
 	return nil
@@ -233,10 +240,14 @@ func (m *sessionManager) SkipInterval(ctx context.Context, key cacheKey) (Sessio
 
 	o.session.goNextInterval(false)
 
-	// TODO: Update database with new interval state
-	// m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-	//     return m.repo.UpdateSession(ctx, sessionPtr.sessionID, ...)
-	// })
+	// Update database with new interval state
+	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+		_, err := m.repo.UpdateSession(ctx, o.session.sessionID, o.session.toRecord())
+		return err
+	})
+	if err != nil {
+		return Session{}, fmt.Errorf("failed to skip interval: %w", err)
+	}
 
 	return *o.session, nil
 }

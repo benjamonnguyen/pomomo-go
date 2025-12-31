@@ -17,7 +17,6 @@ Create helper function withRetries(max int, f func() bool) error
 3. **Cleanup**: Release locks, close channels
 
 - refactor to disgo
-- persistence
 - Populate cache on startup
   - if stale, best effort deletion of message
 - sound alert
