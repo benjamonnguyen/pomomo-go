@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
 	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
 )
@@ -23,19 +22,17 @@ type CommandHandler interface {
 }
 
 type commandHandler struct {
-	parentCtx      context.Context
-	sessionManager SessionManager
+	parentCtx        context.Context
+	sessionManager   SessionManager
+	discordMessenger DiscordMessenger
 }
 
-func NewCommandHandler(parentCtx context.Context, sm SessionManager) CommandHandler {
+func NewCommandHandler(parentCtx context.Context, sm SessionManager, dm DiscordMessenger) CommandHandler {
 	return &commandHandler{
-		parentCtx:      parentCtx,
-		sessionManager: sm,
+		parentCtx:        parentCtx,
+		sessionManager:   sm,
+		discordMessenger: dm,
 	}
-}
-
-func (h *commandHandler) timeout() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(h.parentCtx, 10*time.Second)
 }
 
 func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
@@ -47,9 +44,6 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	if data.Name != pomomo.StartCommand.Name {
 		return
 	}
-
-	timeout, c := h.timeout()
-	defer c()
 
 	// Parse command options with defaults
 	settings := SessionSettings{
@@ -77,7 +71,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	if h.sessionManager.HasSession(m.GuildID, m.ChannelID) {
-		if _, err := dgutils.Respond(s, m.Interaction, false, dgutils.TextDisplay("This channel already has an active session.")); err != nil {
+		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
 			log.Error(err)
 		}
 		return
@@ -91,13 +85,13 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		intervalStartedAt: time.Now(),
 		status:            pomomo.SessionRunning,
 	}
-	msg, err := dgutils.Respond(s, m.Interaction, true, session.MessageComponents()...)
+	msg, err := h.discordMessenger.Respond(m.Interaction, true, SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
-	session, err = h.sessionManager.StartSession(timeout, startSessionRequest{
+	session, err = h.sessionManager.StartSession(h.parentCtx, startSessionRequest{
 		channelID: m.ChannelID,
 		guildID:   m.GuildID,
 		messageID: msg.ID,
@@ -105,7 +99,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	})
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := dgutils.EditResponse(s, m.Interaction, dgutils.TextDisplay("Failed to start session.")); err != nil {
+		if _, err := h.discordMessenger.EditResponse(m.Interaction, TextDisplay("Failed to start session.")); err != nil {
 			log.Error(err)
 		}
 		return
@@ -116,8 +110,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		log.Error("failed to pin message", "err", err)
 	}
 
-	// TODO SessionManager goroutine to update session msg info and go next
-	// TODO go next interval with sound (ffmpeg?)
+	// TODO! go next interval with sound (ffmpeg?)
 	// TODO SessionManager goroutine to update stats with lesser frequency
 
 	// TODO impl Resume/Pause
@@ -130,7 +123,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	data := m.MessageComponentData()
-	id, err := dgutils.FromCustomID(data.CustomID)
+	id, err := FromCustomID(data.CustomID)
 	if err != nil {
 		return
 	}
@@ -138,22 +131,19 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	timeout, c := h.timeout()
-	defer c()
-
-	followup, err := dgutils.DeferMessageUpdate(s, m.Interaction)
+	followup, err := h.discordMessenger.DeferMessageUpdate(m.Interaction)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
-	session, err := h.sessionManager.SkipInterval(timeout, cacheKey{
+	session, err := h.sessionManager.SkipInterval(h.parentCtx, sessionKey{
 		guildID:   id.GuildID,
 		channelID: id.ChannelID,
 	})
 	if err != nil {
 		log.Error("failed to skip interval", "err", err)
-		components := append(session.MessageComponents(), dgutils.TextDisplay(defaultErrorMsg))
+		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
 		if _, err := followup(components...); err != nil {
 			log.Error(err)
 		}
@@ -161,7 +151,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 	}
 	log.Debug("skipped interval", "new", session.currentInterval)
 
-	_, err = followup(session.MessageComponents()...)
+	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
 		return
@@ -174,7 +164,7 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 	}
 
 	data := m.MessageComponentData()
-	id, err := dgutils.FromCustomID(data.CustomID)
+	id, err := FromCustomID(data.CustomID)
 	if err != nil {
 		return
 	}
@@ -182,22 +172,19 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 		return
 	}
 
-	timeout, c := h.timeout()
-	defer c()
-
-	followup, err := dgutils.DeferMessageUpdate(s, m.Interaction)
+	followup, err := h.discordMessenger.DeferMessageUpdate(m.Interaction)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
-	session, err := h.sessionManager.EndSession(timeout, cacheKey{
+	session, err := h.sessionManager.EndSession(h.parentCtx, sessionKey{
 		guildID:   id.GuildID,
 		channelID: id.ChannelID,
 	})
 	if err != nil {
 		log.Error("failed to end session", "err", err)
-		components := append(session.MessageComponents(), dgutils.TextDisplay(defaultErrorMsg))
+		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
 		if _, err := followup(components...); err != nil {
 			log.Error(err)
 		}
@@ -205,7 +192,7 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 	}
 	log.Debug("ended session", "id", session.sessionID)
 
-	_, err = followup(session.MessageComponents()...)
+	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
 		return

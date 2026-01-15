@@ -1,14 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"math"
-	"strings"
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
-	"github.com/bwmarrin/discordgo"
 )
 
 const (
@@ -68,11 +63,15 @@ func (i SessionInterval) enum() pomomo.SessionInterval {
 	}
 }
 
-func (s Session) key() cacheKey {
-	return cacheKey{
+func (s Session) key() sessionKey {
+	key := sessionKey{
 		guildID:   s.guildID,
 		channelID: s.channelID,
 	}
+	if err := key.validate(); err != nil {
+		panic(err)
+	}
+	return key
 }
 
 func (s *Session) goNextInterval(shouldUpdateStats bool) {
@@ -116,93 +115,4 @@ func (s Session) CurrentDuration() time.Duration {
 	default:
 		panic("unexpected interval state")
 	}
-}
-
-func (s Session) TimerBar() string {
-	const length = 20
-	filledChar := timerBarFilledChar
-	emptyChar := timerBarEmptyChar
-	remaining := s.RemainingTime().Minutes()
-	if remaining <= 0 {
-		return strings.Repeat(emptyChar, length)
-	}
-	percentage := remaining / s.CurrentDuration().Minutes()
-	filled := min(int(math.Round(percentage*length*10)/10), length)
-	return strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, length-filled)
-}
-
-func (s Session) MessageComponents() []discordgo.MessageComponent {
-	if s.status == pomomo.SessionEnded {
-		return []discordgo.MessageComponent{
-			getEndMessage(),
-		}
-	}
-	// action row
-	skipButton := discordgo.Button{
-		Label: "Skip",
-		Style: discordgo.PrimaryButton,
-		CustomID: dgutils.InteractionID{
-			Type:      "skip",
-			GuildID:   s.guildID,
-			ChannelID: s.channelID,
-		}.ToCustomID(),
-	}
-	endButton := discordgo.Button{
-		Label: "End",
-		Style: discordgo.DangerButton,
-		CustomID: dgutils.InteractionID{
-			Type:      "end",
-			GuildID:   s.guildID,
-			ChannelID: s.channelID,
-		}.ToCustomID(),
-	}
-
-	actionRow := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{skipButton, endButton},
-	}
-
-	// settings
-	settingsTextParts := []string{
-		"### Session Settings",
-		fmt.Sprintf("%s: %d min", PomodoroInterval, int(s.settings.pomodoro.Minutes())),
-		fmt.Sprintf("%s: %d min", ShortBreakInterval, int(s.settings.shortBreak.Minutes())),
-		fmt.Sprintf("%s: %d min", LongBreakInterval, int(s.settings.longBreak.Minutes())),
-		fmt.Sprintf("%s: %d | %d", "Interval", s.stats.completedPomodoros%s.settings.intervals, s.settings.intervals),
-	}
-	switch s.currentInterval {
-	case PomodoroInterval:
-		settingsTextParts[1] = fmt.Sprintf("**%s**\n%s", settingsTextParts[1], s.TimerBar())
-	case ShortBreakInterval:
-		settingsTextParts[2] = fmt.Sprintf("**%s**\n%s", settingsTextParts[2], s.TimerBar())
-	case LongBreakInterval:
-		settingsTextParts[3] = fmt.Sprintf("**%s**\n%s", settingsTextParts[3], s.TimerBar())
-	}
-	accentColor := dgutils.ColorGreen
-	if s.status == pomomo.SessionPaused {
-		accentColor = dgutils.ColorLightGrey
-	}
-	settingsContainer := discordgo.Container{
-		Components: []discordgo.MessageComponent{
-			discordgo.TextDisplay{
-				Content: strings.Join(settingsTextParts, "\n"),
-			},
-		},
-		AccentColor: accentColor.ToInt(),
-	}
-
-	//
-	return []discordgo.MessageComponent{
-		getStartMessage(),
-		settingsContainer,
-		actionRow,
-	}
-}
-
-func getStartMessage() discordgo.MessageComponent {
-	return dgutils.TextDisplay("It's productivity o'clock!")
-}
-
-func getEndMessage() discordgo.MessageComponent {
-	// TODO display stats in end message
-	return dgutils.TextDisplay("Good stuff!")
 }

@@ -8,12 +8,10 @@ import (
 
 	"github.com/Thiht/transactor"
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/benjamonnguyen/pomomo-go/cmd/bot/dgutils"
-	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
 )
 
-var timerTickRate = 20 * time.Second
+var updateTickRate = 20 * time.Second
 
 type startSessionRequest struct {
 	guildID, channelID, messageID string
@@ -23,147 +21,111 @@ type startSessionRequest struct {
 type SessionManager interface {
 	HasSession(guildID, channelID string) bool
 	StartSession(context.Context, startSessionRequest) (Session, error)
-	EndSession(context.Context, cacheKey) (Session, error)
-	SkipInterval(context.Context, cacheKey) (Session, error)
+	EndSession(context.Context, sessionKey) (Session, error)
+	SkipInterval(context.Context, sessionKey) (Session, error)
+	// TogglePause(context.Context, sessionKey) (Session, error)
+
+	OnSessionUpdate(func(context.Context, Session))
 	Shutdown() error
 }
 
-type cacheKey struct {
+type sessionKey struct {
 	guildID, channelID string
 }
 
-func (k cacheKey) String() string {
+func (k sessionKey) String() string {
 	return fmt.Sprintf("%s:%s", k.guildID, k.channelID)
 }
 
-func (k cacheKey) validate() error {
+func (k sessionKey) validate() error {
 	if k.guildID == "" || k.channelID == "" {
 		return fmt.Errorf("cacheKey requires guild and channel IDs")
 	}
 	return nil
 }
 
-type cacheObject struct {
-	session     *Session
-	cancelTimer func()
-}
-
 type sessionManager struct {
-	cacheMu  sync.RWMutex
-	cache    map[cacheKey]*cacheObject
-	keyCache map[cacheKey]*sync.Mutex
-	wg       sync.WaitGroup
+	repo  pomomo.SessionRepo
+	tx    transactor.Transactor
+	cache *sessionCache
+	wg    sync.WaitGroup
 
-	repo           pomomo.SessionRepo
-	tx             transactor.Transactor
-	discordSession *discordgo.Session
+	onSessionUpdate func(context.Context, Session)
 }
 
-func NewSessionManager(repo pomomo.SessionRepo, tx transactor.Transactor, discordSession *discordgo.Session) SessionManager {
+func NewSessionManager(repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
 	// TODO repo.GetByStatus(...status) to populate cache
+	//
+	cache := sessionCache{
+		sessions:    make(map[sessionKey]*Session),
+		locks:       make(map[sessionKey]*sync.Mutex),
+		cancelFuncs: make(map[sessionKey]func()),
+	}
 	return &sessionManager{
-		cache:          make(map[cacheKey]*cacheObject),
-		keyCache:       make(map[cacheKey]*sync.Mutex),
-		repo:           repo,
-		tx:             tx,
-		discordSession: discordSession,
+		cache: &cache,
+		repo:  repo,
+		tx:    tx,
 	}
 }
 
 func (m *sessionManager) HasSession(guildID, channelID string) bool {
-	m.cacheMu.RLock()
-	defer m.cacheMu.RUnlock()
-	_, exists := m.cache[cacheKey{
+	return m.cache.Has(sessionKey{
 		guildID:   guildID,
 		channelID: channelID,
-	}]
-	return exists
+	})
 }
 
-func (m *sessionManager) deleteSession(key cacheKey) {
-	o, _ := m.getCacheObject(key)
-	if o != nil {
-		delete(m.cache, key)
-		delete(m.keyCache, key)
-		if o.cancelTimer != nil {
-			o.cancelTimer()
-		}
-	}
+func (m *sessionManager) OnSessionUpdate(handler func(context.Context, Session)) {
+	m.onSessionUpdate = handler
 }
 
-// returns unlock func
-func (m *sessionManager) getCacheObject(key cacheKey) (*cacheObject, func()) {
-	m.cacheMu.RLock()
-	defer m.cacheMu.RUnlock()
-	mu := m.keyCache[key]
-	if mu == nil {
-		return nil, nil
+func (m *sessionManager) updateSession(ctx context.Context, s *Session) error {
+	if s.RemainingTime() <= 0 {
+		s.goNextInterval(true)
 	}
-	mu.Lock()
-	return m.cache[key], mu.Unlock
+	return m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+		_, err := m.repo.UpdateSession(ctx, s.sessionID, s.toRecord())
+		return err
+	})
 }
 
-func (m *sessionManager) startIntervalTimer(key cacheKey) error {
-	o, unlock := m.getCacheObject(key)
-	if o == nil {
-		panic("no session for key " + key.String())
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	o.cancelTimer = cancel
-	unlock()
-
-	// Start the timer loop goroutine
+func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
 	m.wg.Go(func() {
-		next := time.Now()
+		var updateMu sync.Mutex
+		ticker := time.NewTicker(updateTickRate)
 		for {
-			// Sleep until next minute, but allow cancellation
+			func() {
+				s, unlock := m.cache.Get(key)
+				defer unlock()
+				if s == nil {
+					log.Info("ending update loop - session not found", "key", key.String())
+					return
+				}
+				if err := m.updateSession(ctx, s); err != nil {
+					log.Error("failed to update session interval in timer", "sessionID", s.sessionID, "err", err)
+				} else if m.onSessionUpdate != nil {
+					// can't rely on onSessionUpdate to handle ctx timeout - if still locked, skip call
+					go func() {
+						if updateMu.TryLock() {
+							m.onSessionUpdate(ctx, *s)
+						}
+						defer updateMu.Unlock()
+					}()
+				}
+			}()
 			select {
 			case <-ctx.Done():
+				// log.Debug("ending update loop - context done", "err", ctx.Err())
 				return
-			case <-time.After(time.Until(next.Add(timerTickRate))):
-				// continue loop
-			}
-			next = time.Now()
-			o, unlock := m.getCacheObject(key)
-			if o == nil {
-				m.deleteSession(key)
-				return
-			}
-			if o.session.RemainingTime() <= 0 {
-				o.session.goNextInterval(true)
-			}
-			err := m.tx.WithinTransaction(context.Background(), func(ctx context.Context) error {
-				record := o.session.toRecord()
-				_, err := m.repo.UpdateSession(ctx, o.session.sessionID, record)
-				return err
-			})
-			unlock()
-			if err != nil {
-				log.Error("failed to update session interval in timer", "sessionID", o.session.sessionID, "err", err)
-			}
-			_, err = dgutils.EditChannelMessage(m.discordSession, o.session.channelID, o.session.messageID, o.session.MessageComponents()...)
-			if err != nil {
-				log.Error("failed to edit channel message", "channelID", o.session.channelID, "messageID", o.session.messageID, "err", err)
+			case <-ticker.C:
+				continue
 			}
 		}
 	})
-	return nil
 }
 
-func (m *sessionManager) stopIntervalTimer(key cacheKey) {
-	o, unlock := m.getCacheObject(key)
-	if o == nil {
-		return
-	}
-	defer unlock()
-	if o.cancelTimer != nil {
-		o.cancelTimer()
-		o.cancelTimer = nil
-	}
-}
-
-func (m *sessionManager) StartSession(parentCtx context.Context, req startSessionRequest) (Session, error) {
-	session := Session{
+func (m *sessionManager) StartSession(ctx context.Context, req startSessionRequest) (Session, error) {
+	session := &Session{
 		channelID:         req.channelID,
 		guildID:           req.guildID,
 		messageID:         req.messageID,
@@ -173,34 +135,23 @@ func (m *sessionManager) StartSession(parentCtx context.Context, req startSessio
 		status:            pomomo.SessionRunning,
 	}
 	key := session.key()
-	if err := key.validate(); err != nil {
-		return Session{}, err
-	}
 
-	if m.HasSession(req.guildID, req.channelID) {
+	if m.cache.Has(key) {
 		return Session{}, fmt.Errorf("session already exists for guild %s channel %s", req.guildID, req.channelID)
 	}
 
-	m.cacheMu.Lock()
-	mu := &sync.Mutex{}
-	mu.Lock()
-	m.keyCache[key] = mu
-	m.cache[key] = &cacheObject{
-		session: &session,
-	}
-	m.cacheMu.Unlock()
-
 	// Execute transaction
-	err := m.tx.WithinTransaction(parentCtx, func(ctx context.Context) error {
+	release := m.cache.Hold(key)
+	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		// Insert session record
-		existingSession, err := m.repo.InsertSession(ctx, session.toRecord())
+		inserted, err := m.repo.InsertSession(ctx, session.toRecord())
 		if err != nil {
 			return fmt.Errorf("failed to insert session: %w", err)
 		}
 
 		// Insert session settings record
 		settingsRecord := pomomo.SessionSettingsRecord{
-			SessionID:  existingSession.ID,
+			SessionID:  inserted.ID,
 			Pomodoro:   req.settings.pomodoro,
 			ShortBreak: req.settings.shortBreak,
 			LongBreak:  req.settings.longBreak,
@@ -212,92 +163,160 @@ func (m *sessionManager) StartSession(parentCtx context.Context, req startSessio
 		}
 
 		// Update session with ID
-		session.sessionID = existingSession.ID
+		session.sessionID = inserted.ID
 		return nil
 	})
+	release()
 	if err != nil {
-		mu.Unlock()
-		m.deleteSession(key)
 		return Session{}, fmt.Errorf("failed to start session: %w", err)
 	}
-	mu.Unlock()
 
-	// Start per-session goroutine
-	if err := m.startIntervalTimer(key); err != nil {
-		m.deleteSession(key)
-		return Session{}, fmt.Errorf("failed to start session timer: %w", err)
-	}
-
-	return session, nil
+	ctx = m.cache.Add(ctx, session)
+	m.startUpdateLoop(ctx, key)
+	return *session, nil
 }
 
-func (m *sessionManager) SkipInterval(ctx context.Context, key cacheKey) (Session, error) {
-	o, unlock := m.getCacheObject(key)
-	if o == nil {
+func (m *sessionManager) SkipInterval(ctx context.Context, key sessionKey) (Session, error) {
+	s, unlock := m.cache.Get(key)
+	if s == nil {
 		return Session{}, fmt.Errorf("session not found for key: %v", key)
 	}
 	defer unlock()
 
-	o.session.goNextInterval(false)
+	s.goNextInterval(false)
 
 	// Update database with new interval state
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		_, err := m.repo.UpdateSession(ctx, o.session.sessionID, o.session.toRecord())
+		_, err := m.repo.UpdateSession(ctx, s.sessionID, s.toRecord())
 		return err
 	})
 	if err != nil {
 		return Session{}, fmt.Errorf("failed to skip interval: %w", err)
 	}
 
-	return *o.session, nil
+	return *s, nil
 }
 
-func (m *sessionManager) EndSession(ctx context.Context, key cacheKey) (Session, error) {
-	o, unlock := m.getCacheObject(key)
-	if o == nil {
+func (m *sessionManager) EndSession(ctx context.Context, key sessionKey) (Session, error) {
+	s, unlock := m.cache.Get(key)
+	if s == nil {
 		return Session{}, fmt.Errorf("session not found for key: %v", key)
 	}
 
-	session := *o.session
-	session.status = pomomo.SessionEnded
+	copy := *s
+	copy.status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		record := session.toRecord()
-		_, err := m.repo.UpdateSession(ctx, session.sessionID, record)
+		record := copy.toRecord()
+		_, err := m.repo.UpdateSession(ctx, copy.sessionID, record)
 		if err != nil {
 			return fmt.Errorf("failed to update session status: %w", err)
 		}
 
-		_, err = m.repo.DeleteSettings(ctx, session.sessionID)
+		_, err = m.repo.DeleteSettings(ctx, copy.sessionID)
 		if err != nil {
 			return fmt.Errorf("failed to delete settings: %w", err)
 		}
 		return nil
 	})
+	unlock()
 	if err != nil {
-		unlock()
 		return Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
-	unlock()
 
-	m.deleteSession(key)
-	return session, nil
+	m.cache.Remove(key)
+	return copy, nil
 }
 
 func (m *sessionManager) Shutdown() error {
-	// Collect all cache keys
-	m.cacheMu.RLock()
-	keys := make([]cacheKey, 0, len(m.cache))
-	for key := range m.cache {
-		keys = append(keys, key)
-	}
-	m.cacheMu.RUnlock()
-
-	// Cancel timers for all sessions
-	for _, key := range keys {
-		m.stopIntervalTimer(key)
+	m.cache.cacheMu.Lock()
+	for _, c := range m.cache.cancelFuncs {
+		c()
 	}
 
 	// Wait for all timer goroutines to exit
 	m.wg.Wait()
 	return nil
+}
+
+// Cache
+
+type sessionCache struct {
+	cacheMu     sync.RWMutex
+	sessions    map[sessionKey]*Session
+	locks       map[sessionKey]*sync.Mutex
+	cancelFuncs map[sessionKey]func()
+}
+
+// Add returns cancellable context
+func (c *sessionCache) Add(ctx context.Context, s *Session) context.Context {
+	key := s.key()
+	if c.Has(key) {
+		panic("session already exists for key: " + key.String())
+	}
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	c.locks[key] = &sync.Mutex{}
+	c.sessions[key] = s
+	ctx, cancel := context.WithCancel(ctx)
+	c.cancelFuncs[key] = cancel
+	return ctx
+}
+
+func (c *sessionCache) Remove(key sessionKey) {
+	if !c.Has(key) {
+		log.Debug("session not found", "key", key.String())
+		return
+	}
+
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	c.locks[key].Lock()
+	c.cancelFuncs[key]()
+	delete(c.cancelFuncs, key)
+	delete(c.sessions, key)
+	delete(c.locks, key)
+}
+
+func (c *sessionCache) Get(key sessionKey) (*Session, func()) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
+	if !exists {
+		return nil, nil
+	}
+
+	l := c.locks[key]
+	l.Lock()
+	return c.sessions[key], l.Unlock
+}
+
+func (c *sessionCache) Has(key sessionKey) bool {
+	c.cacheMu.RLock()
+	defer c.cacheMu.RUnlock()
+
+	_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
+	return exists
+}
+
+func (c *sessionCache) Hold(key sessionKey) func() {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+	if l := c.locks[key]; l != nil {
+		l.Lock()
+		return l.Unlock
+	}
+
+	mu := &sync.Mutex{}
+	mu.Lock()
+	c.locks[key] = mu
+	return func() {
+		c.cacheMu.Lock()
+		defer c.cacheMu.Unlock()
+		delete(c.locks, key)
+		mu.Unlock()
+	}
 }

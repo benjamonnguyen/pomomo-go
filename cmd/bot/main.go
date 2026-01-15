@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,6 +22,11 @@ import (
 
 //go:embed migrations/*.sql
 var migrations embed.FS
+
+const (
+	RepoURL = "https://github.com/benjamonnguyen/pomomo-go"
+	Version = "0.0.0"
+)
 
 func main() {
 	// logger
@@ -57,27 +64,39 @@ func main() {
 		txStdLib.NestedTransactionsSavepoints,
 	)
 
-	// set up bot
-	bot, err := discordgo.New("Bot " + botToken)
+	// set up discord cl
+	cl, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		log.Fatal(err)
 	}
+	cl.ShouldRetryOnRateLimit = false
+	// ShardID:                            0,
+	// ShardCount:                         1,
+	cl.Client = &http.Client{Timeout: (20 * time.Second)}
+	cl.UserAgent = fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)
+	dm := NewDiscordMessenger(cl)
 
 	// service objects
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
-	sessionManager := NewSessionManager(sessionRepo, tx, bot)
+	sessionManager := NewSessionManager(sessionRepo, tx)
+	sessionManager.OnSessionUpdate(func(ctx context.Context, s Session) {
+		_, err = dm.EditChannelMessage(s.channelID, s.messageID, SessionMessageComponents(s)...)
+		if err != nil {
+			log.Error("failed to edit discord channel message", "channelID", s.channelID, "messageID", s.messageID, "sessionID", s.sessionID, "err", err)
+		}
+	})
 
 	// command handler
-	cm := NewCommandHandler(topCtx, sessionManager)
-	bot.AddHandler(cm.StartSession)
-	bot.AddHandler(cm.SkipInterval)
-	bot.AddHandler(cm.EndSession)
+	cm := NewCommandHandler(topCtx, sessionManager, dm)
+	cl.AddHandler(cm.StartSession)
+	cl.AddHandler(cm.SkipInterval)
+	cl.AddHandler(cm.EndSession)
 
 	// open connection
-	if err := bot.Open(); err != nil {
+	if err := cl.Open(); err != nil {
 		log.Fatal("Error opening connection", "err", err)
 	}
-	defer bot.Close() //nolint
+	defer cl.Close() //nolint
 	log.Info(botName + " running. Press CTRL-C to exit.")
 
 	// graceful shutdown
@@ -94,6 +113,9 @@ func main() {
 		c()
 	}()
 	<-shutdownTimeout.Done()
+	if shutdownTimeout.Err() != context.Canceled {
+		log.Error("failed to shut down gracefully", "err", shutdownTimeout.Err())
+	}
 }
 
 func panicif(err error) {
