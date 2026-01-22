@@ -33,7 +33,6 @@ type sessionEntity struct {
 }
 
 type sessionSettingsEntity struct {
-	ID                 string
 	SessionID          string
 	PomodoroDuration   int
 	ShortBreakDuration int
@@ -208,7 +207,7 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 	e := mapToSessionSettingsEntity(existingRecord)
 
 	args := []any{
-		e.ID,
+		e.SessionID,
 		e.SessionID,
 		e.PomodoroDuration,
 		e.ShortBreakDuration,
@@ -217,7 +216,7 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO session_settings (id, session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO session_settings (session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session settings", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -271,7 +270,7 @@ func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error
 
 func extractSessionSettings(s sqliteutil.Scannable) (pomomo.ExistingSessionSettingsRecord, error) {
 	var e sessionSettingsEntity
-	if err := s.Scan(&e.ID, &e.SessionID, &e.PomodoroDuration, &e.ShortBreakDuration, &e.LongBreakDuration, &e.Intervals, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.SessionID, &e.PomodoroDuration, &e.ShortBreakDuration, &e.LongBreakDuration, &e.Intervals, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionSettingsRecord{}, ErrNotFound
 		}
@@ -297,7 +296,6 @@ func mapToSessionEntity(session pomomo.ExistingSessionRecord) sessionEntity {
 
 func mapToSessionSettingsEntity(settings pomomo.ExistingSessionSettingsRecord) sessionSettingsEntity {
 	return sessionSettingsEntity{
-		ID:                 settings.ID,
 		SessionID:          settings.SessionID,
 		PomodoroDuration:   int(settings.Pomodoro.Seconds()),
 		ShortBreakDuration: int(settings.ShortBreak.Seconds()),
@@ -329,7 +327,7 @@ func mapToExistingSessionRecord(e sessionEntity) pomomo.ExistingSessionRecord {
 func mapToExistingSessionSettingsRecord(e sessionSettingsEntity) pomomo.ExistingSessionSettingsRecord {
 	return pomomo.ExistingSessionSettingsRecord{
 		DBRow: pomomo.DBRow{
-			ID:        e.ID,
+			ID:        e.SessionID,
 			CreatedAt: time.Unix(int64(e.CreatedAt), 0),
 			UpdatedAt: time.Unix(int64(e.UpdatedAt), 0),
 		},

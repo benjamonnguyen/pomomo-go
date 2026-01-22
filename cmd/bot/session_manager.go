@@ -25,6 +25,8 @@ type SessionManager interface {
 	SkipInterval(context.Context, sessionKey) (Session, error)
 	// TogglePause(context.Context, sessionKey) (Session, error)
 
+	RestoreSessions() ([]Session, error)
+
 	OnSessionUpdate(func(context.Context, Session))
 	Shutdown() error
 }
@@ -61,20 +63,15 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 		cancelFuncs: make(map[sessionKey]func()),
 	}
 
-	mgr := &sessionManager{
+	return &sessionManager{
 		cache:     &cache,
 		repo:      repo,
 		tx:        tx,
 		parentCtx: ctx,
 	}
-
-	mgr.restorePendingSessions()
-	return mgr
 }
 
-// TODO end stale sessions (last update > 5 minutes)
-
-func (m *sessionManager) restorePendingSessions() {
+func (m *sessionManager) RestoreSessions() ([]Session, error) {
 	var toRestore []*Session
 	err := m.tx.WithinTransaction(m.parentCtx, func(ctx context.Context) error {
 		pendingSessions, err := m.repo.GetByStatus(ctx, pomomo.SessionRunning, pomomo.SessionPaused)
@@ -92,13 +89,21 @@ func (m *sessionManager) restorePendingSessions() {
 		}
 		return nil
 	})
-	panicif(err)
+	if err != nil {
+		return nil, err
+	}
 
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		m.startUpdateLoop(sessionCtx, toRestore[i].key())
 	}
 	log.Info("restored pending sessions", "count", len(toRestore))
+
+	var res []Session
+	for _, s := range toRestore {
+		res = append(res, *s)
+	}
+	return res, nil
 }
 
 func (m *sessionManager) HasSession(guildID, channelID string) bool {
@@ -114,7 +119,9 @@ func (m *sessionManager) OnSessionUpdate(handler func(context.Context, Session))
 
 func (m *sessionManager) updateSession(ctx context.Context, s *Session) error {
 	if s.RemainingTime() <= 0 {
+		prev := s.currentInterval.String()
 		s.goNextInterval(true)
+		log.Debug("goNextInterval", "sessionID", s.sessionID, "prev", prev, "curr", s.currentInterval.String())
 	}
 	return m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		_, err := m.repo.UpdateSession(ctx, s.sessionID, s.toRecord())

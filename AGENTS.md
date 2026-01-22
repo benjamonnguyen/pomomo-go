@@ -15,8 +15,7 @@ pomomo-go is a Discord bot that facilitates Pomodoro sessions
 
 ### Building
 ```bash
-# Build the bot
-go build -o bin/bot ./cmd/bot
+go build -o bin/bot <target>
 ```
 
 ### Development

@@ -85,6 +85,8 @@ func main() {
 			log.Error("failed to edit discord channel message", "channelID", s.channelID, "messageID", s.messageID, "sessionID", s.sessionID, "err", err)
 		}
 	})
+	_, err = sessionManager.RestoreSessions()
+	panicif(err)
 
 	// command handler
 	cm := NewCommandHandler(topCtx, sessionManager, dm)
