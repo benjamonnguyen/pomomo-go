@@ -81,7 +81,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		channelID:         m.ChannelID,
 		guildID:           m.GuildID,
 		settings:          settings,
-		currentInterval:   PomodoroInterval,
+		currentInterval:   pomomo.PomodoroInterval,
 		intervalStartedAt: time.Now(),
 		status:            pomomo.SessionRunning,
 	}

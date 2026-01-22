@@ -157,6 +157,38 @@ func (r *sessionRepo) GetSession(ctx context.Context, id string) (pomomo.Existin
 	return extractSession(row)
 }
 
+func (r *sessionRepo) GetByStatus(ctx context.Context, statuses ...pomomo.SessionStatus) ([]pomomo.ExistingSessionRecord, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+
+	db := r.dbGetter(ctx)
+	query := fmt.Sprintf("%s WHERE status IN %s", SelectAllSessions, sqliteutil.GenerateParameters(len(statuses)))
+	log.Debug("getting sessions by status", "query", query, "statuses", statuses)
+	var statusInts []any
+	for _, s := range statuses {
+		statusInts = append(statusInts, uint8(s))
+	}
+	rows, err := db.QueryContext(ctx, query, statusInts...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint
+
+	var sessions []pomomo.ExistingSessionRecord
+	for rows.Next() {
+		session, err := extractSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
+}
+
 func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.SessionSettingsRecord) (pomomo.ExistingSessionSettingsRecord, error) {
 	if settings.SessionID == "" {
 		return pomomo.ExistingSessionSettingsRecord{}, fmt.Errorf("provide required field 'SessionID'")
@@ -224,7 +256,6 @@ func (r *sessionRepo) GetSettings(ctx context.Context, id string) (pomomo.Existi
 
 	return extractSessionSettings(row)
 }
-
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity

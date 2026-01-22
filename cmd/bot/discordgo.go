@@ -195,17 +195,17 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 	// settings
 	settingsTextParts := []string{
 		"### Session Settings",
-		fmt.Sprintf("%s: %d min", PomodoroInterval, int(s.settings.pomodoro.Minutes())),
-		fmt.Sprintf("%s: %d min", ShortBreakInterval, int(s.settings.shortBreak.Minutes())),
-		fmt.Sprintf("%s: %d min", LongBreakInterval, int(s.settings.longBreak.Minutes())),
+		fmt.Sprintf("%s: %d min", pomomo.PomodoroInterval, int(s.settings.pomodoro.Minutes())),
+		fmt.Sprintf("%s: %d min", pomomo.ShortBreakInterval, int(s.settings.shortBreak.Minutes())),
+		fmt.Sprintf("%s: %d min", pomomo.LongBreakInterval, int(s.settings.longBreak.Minutes())),
 		fmt.Sprintf("%s: %d | %d", "Interval", s.stats.completedPomodoros%s.settings.intervals, s.settings.intervals),
 	}
 	switch s.currentInterval {
-	case PomodoroInterval:
+	case pomomo.PomodoroInterval:
 		settingsTextParts[1] = fmt.Sprintf("**%s**\n%s", settingsTextParts[1], timerBar(s))
-	case ShortBreakInterval:
+	case pomomo.ShortBreakInterval:
 		settingsTextParts[2] = fmt.Sprintf("**%s**\n%s", settingsTextParts[2], timerBar(s))
-	case LongBreakInterval:
+	case pomomo.LongBreakInterval:
 		settingsTextParts[3] = fmt.Sprintf("**%s**\n%s", settingsTextParts[3], timerBar(s))
 	default:
 		settingsTextParts = append(settingsTextParts, timerBar(s))

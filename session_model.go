@@ -23,6 +23,19 @@ const (
 	LongBreakInterval
 )
 
+func (i SessionInterval) String() string {
+	switch i {
+	case PomodoroInterval:
+		return "Pomodoro"
+	case ShortBreakInterval:
+		return "Short Break"
+	case LongBreakInterval:
+		return "Long Break"
+	default:
+		panic("no matching enum for SessionInterval: " + string(i))
+	}
+}
+
 type SessionRecord struct {
 	GuildID   string
 	ChannelID string
@@ -59,6 +72,7 @@ type SessionRepo interface {
 	UpdateSession(ctx context.Context, id string, s SessionRecord) (ExistingSessionRecord, error)
 	DeleteSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
+	GetByStatus(ctx context.Context, status ...SessionStatus) ([]ExistingSessionRecord, error)
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
 	DeleteSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
 	GetSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)

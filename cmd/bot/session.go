@@ -16,10 +16,31 @@ type Session struct {
 	messageID                     string // Discord message ID
 	settings                      SessionSettings
 	stats                         SessionStats
-	currentInterval               SessionInterval
+	currentInterval               pomomo.SessionInterval
 	intervalStartedAt             time.Time // When current interval started
 	status                        pomomo.SessionStatus
-	// TODO connection instance
+	// TODO voice connection instance
+}
+
+// TODO stats
+
+func NewSession(session pomomo.ExistingSessionRecord, settings pomomo.ExistingSessionSettingsRecord) Session {
+	return Session{
+		sessionID:         session.ID,
+		guildID:           session.GuildID,
+		channelID:         session.ChannelID,
+		messageID:         session.MessageID,
+		currentInterval:   session.CurrentInterval,
+		intervalStartedAt: session.IntervalStartedAt,
+		status:            session.Status,
+
+		settings: SessionSettings{
+			pomodoro:   settings.Pomodoro,
+			shortBreak: settings.ShortBreak,
+			longBreak:  settings.LongBreak,
+			intervals:  settings.Intervals,
+		},
+	}
 }
 
 func (s Session) toRecord() pomomo.SessionRecord {
@@ -27,7 +48,7 @@ func (s Session) toRecord() pomomo.SessionRecord {
 		GuildID:           s.guildID,
 		ChannelID:         s.channelID,
 		MessageID:         s.messageID,
-		CurrentInterval:   s.currentInterval.enum(),
+		CurrentInterval:   s.currentInterval,
 		IntervalStartedAt: s.intervalStartedAt,
 		Status:            s.status,
 	}
@@ -40,27 +61,6 @@ type SessionSettings struct {
 
 type SessionStats struct {
 	completedPomodoros int
-}
-
-type SessionInterval string
-
-const (
-	PomodoroInterval   SessionInterval = "Pomodoro"
-	ShortBreakInterval SessionInterval = "Short Break"
-	LongBreakInterval  SessionInterval = "Long Break"
-)
-
-func (i SessionInterval) enum() pomomo.SessionInterval {
-	switch i {
-	case PomodoroInterval:
-		return pomomo.PomodoroInterval
-	case ShortBreakInterval:
-		return pomomo.ShortBreakInterval
-	case LongBreakInterval:
-		return pomomo.LongBreakInterval
-	default:
-		panic("no matching enum for SessionInterval: " + string(i))
-	}
 }
 
 func (s Session) key() sessionKey {
@@ -77,24 +77,24 @@ func (s Session) key() sessionKey {
 func (s *Session) goNextInterval(shouldUpdateStats bool) {
 	// update stats
 	if shouldUpdateStats {
-		if s.currentInterval == PomodoroInterval {
+		if s.currentInterval == pomomo.PomodoroInterval {
 			s.stats.completedPomodoros++
 		}
 	}
 
 	// update interval
-	var next SessionInterval
+	var next pomomo.SessionInterval
 	switch s.currentInterval {
-	case PomodoroInterval:
+	case pomomo.PomodoroInterval:
 		// After pomodoro, decide break type based on completed pomodoros
 		if s.stats.completedPomodoros > 0 && s.stats.completedPomodoros%s.settings.intervals == 0 {
-			next = LongBreakInterval
+			next = pomomo.LongBreakInterval
 		} else {
-			next = ShortBreakInterval
+			next = pomomo.ShortBreakInterval
 		}
-	case ShortBreakInterval, LongBreakInterval:
+	case pomomo.ShortBreakInterval, pomomo.LongBreakInterval:
 		// After any break, next is pomodoro
-		next = PomodoroInterval
+		next = pomomo.PomodoroInterval
 	}
 	s.currentInterval = next
 	s.intervalStartedAt = time.Now()
@@ -106,11 +106,11 @@ func (s Session) RemainingTime() time.Duration {
 
 func (s Session) CurrentDuration() time.Duration {
 	switch s.currentInterval {
-	case PomodoroInterval:
+	case pomomo.PomodoroInterval:
 		return s.settings.pomodoro
-	case ShortBreakInterval:
+	case pomomo.ShortBreakInterval:
 		return s.settings.shortBreak
-	case LongBreakInterval:
+	case pomomo.LongBreakInterval:
 		return s.settings.longBreak
 	default:
 		panic("unexpected interval state")

@@ -55,18 +55,50 @@ type sessionManager struct {
 }
 
 func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
-	// @implement repo.GetByStatus(...status) to populate cache
 	cache := sessionCache{
 		sessions:    make(map[sessionKey]*Session),
 		locks:       make(map[sessionKey]*sync.Mutex),
 		cancelFuncs: make(map[sessionKey]func()),
 	}
-	return &sessionManager{
+
+	mgr := &sessionManager{
 		cache:     &cache,
 		repo:      repo,
 		tx:        tx,
 		parentCtx: ctx,
 	}
+
+	mgr.restorePendingSessions()
+	return mgr
+}
+
+// TODO end stale sessions (last update > 5 minutes)
+
+func (m *sessionManager) restorePendingSessions() {
+	var toRestore []*Session
+	err := m.tx.WithinTransaction(m.parentCtx, func(ctx context.Context) error {
+		pendingSessions, err := m.repo.GetByStatus(ctx, pomomo.SessionRunning, pomomo.SessionPaused)
+		if err != nil {
+			return err
+		}
+
+		for _, pendingSession := range pendingSessions {
+			existingSettings, err := m.repo.GetSettings(ctx, pendingSession.ID)
+			if err != nil {
+				return err
+			}
+			session := NewSession(pendingSession, existingSettings)
+			toRestore = append(toRestore, &session)
+		}
+		return nil
+	})
+	panicif(err)
+
+	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
+	for i, sessionCtx := range sessionCtxs {
+		m.startUpdateLoop(sessionCtx, toRestore[i].key())
+	}
+	log.Info("restored pending sessions", "count", len(toRestore))
 }
 
 func (m *sessionManager) HasSession(guildID, channelID string) bool {
@@ -130,7 +162,7 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		guildID:           req.guildID,
 		messageID:         req.messageID,
 		settings:          req.settings,
-		currentInterval:   PomodoroInterval,
+		currentInterval:   pomomo.PomodoroInterval,
 		intervalStartedAt: time.Now(),
 		status:            pomomo.SessionRunning,
 	}
@@ -171,8 +203,8 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		return Session{}, fmt.Errorf("failed to start session: %w", err)
 	}
 
-	updateLoopCtx := m.cache.Add(m.parentCtx, session)
-	m.startUpdateLoop(updateLoopCtx, key)
+	sessionCtxs := m.cache.Add(m.parentCtx, session)
+	m.startUpdateLoop(sessionCtxs[0], key)
 	return *session, nil
 }
 
@@ -247,21 +279,26 @@ type sessionCache struct {
 	cancelFuncs map[sessionKey]func()
 }
 
-// Add returns cancellable context
-func (c *sessionCache) Add(ctx context.Context, s *Session) context.Context {
-	key := s.key()
-	if c.Has(key) {
-		panic("session already exists for key: " + key.String())
-	}
-
+// Add returns cancellable session contexts
+func (c *sessionCache) Add(ctx context.Context, sessions ...*Session) []context.Context {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 
-	c.locks[key] = &sync.Mutex{}
-	c.sessions[key] = s
-	ctx, cancel := context.WithCancel(ctx)
-	c.cancelFuncs[key] = cancel
-	return ctx
+	sessionCtxs := make([]context.Context, 0, len(sessions))
+	for _, s := range sessions {
+		key := s.key()
+		_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
+		if exists {
+			panic("session already exists for key: " + key.String())
+		}
+		c.locks[key] = &sync.Mutex{}
+		c.sessions[key] = s
+		sessionCtx, cancel := context.WithCancel(ctx)
+		c.cancelFuncs[key] = cancel
+		sessionCtxs = append(sessionCtxs, sessionCtx)
+	}
+
+	return sessionCtxs
 }
 
 func (c *sessionCache) Remove(key sessionKey) {
