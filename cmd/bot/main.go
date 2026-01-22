@@ -78,7 +78,7 @@ func main() {
 
 	// service objects
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
-	sessionManager := NewSessionManager(sessionRepo, tx)
+	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
 	sessionManager.OnSessionUpdate(func(ctx context.Context, s Session) {
 		_, err = dm.EditChannelMessage(s.channelID, s.messageID, SessionMessageComponents(s)...)
 		if err != nil {

@@ -45,26 +45,27 @@ func (k sessionKey) validate() error {
 }
 
 type sessionManager struct {
-	repo  pomomo.SessionRepo
-	tx    transactor.Transactor
-	cache *sessionCache
-	wg    sync.WaitGroup
+	repo      pomomo.SessionRepo
+	tx        transactor.Transactor
+	cache     *sessionCache
+	wg        sync.WaitGroup
+	parentCtx context.Context
 
 	onSessionUpdate func(context.Context, Session)
 }
 
-func NewSessionManager(repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
-	// TODO repo.GetByStatus(...status) to populate cache
-	//
+func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
+	// @implement repo.GetByStatus(...status) to populate cache
 	cache := sessionCache{
 		sessions:    make(map[sessionKey]*Session),
 		locks:       make(map[sessionKey]*sync.Mutex),
 		cancelFuncs: make(map[sessionKey]func()),
 	}
 	return &sessionManager{
-		cache: &cache,
-		repo:  repo,
-		tx:    tx,
+		cache:     &cache,
+		repo:      repo,
+		tx:        tx,
+		parentCtx: ctx,
 	}
 }
 
@@ -115,7 +116,6 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
 			}()
 			select {
 			case <-ctx.Done():
-				// log.Debug("ending update loop - context done", "err", ctx.Err())
 				return
 			case <-ticker.C:
 				continue
@@ -171,8 +171,8 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		return Session{}, fmt.Errorf("failed to start session: %w", err)
 	}
 
-	ctx = m.cache.Add(ctx, session)
-	m.startUpdateLoop(ctx, key)
+	updateLoopCtx := m.cache.Add(m.parentCtx, session)
+	m.startUpdateLoop(updateLoopCtx, key)
 	return *session, nil
 }
 
