@@ -5,7 +5,7 @@ CREATE TABLE session_settings (
     long_break_duration INTEGER NOT NULL,
     intervals INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-FOREIGN KEY(session_id) REFERENCES sessions(id)
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES sessions(id)
 );
 

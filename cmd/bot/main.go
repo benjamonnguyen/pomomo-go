@@ -14,6 +14,7 @@ import (
 	"github.com/benjamonnguyen/deadsimple/config"
 	dsdb "github.com/benjamonnguyen/deadsimple/database/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/benjamonnguyen/pomomo-go/sqlite"
 	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
@@ -79,13 +80,13 @@ func main() {
 	// service objects
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
 	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
-	sessionManager.OnSessionUpdate(func(ctx context.Context, s Session) {
-		_, err = dm.EditChannelMessage(s.channelID, s.messageID, SessionMessageComponents(s)...)
+	sessionManager.OnSessionUpdate(func(ctx context.Context, s models.Session) {
+		_, err = dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
 		if err != nil {
-			log.Error("failed to edit discord channel message", "channelID", s.channelID, "messageID", s.messageID, "sessionID", s.sessionID, "err", err)
+			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
 		}
 	})
-	_, err = sessionManager.RestoreSessions()
+	err = sessionManager.RestoreSessions()
 	panicif(err)
 
 	// command handler

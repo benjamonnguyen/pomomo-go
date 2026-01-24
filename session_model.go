@@ -43,8 +43,10 @@ type SessionRecord struct {
 
 	//
 	IntervalStartedAt time.Time
-	CurrentInterval   SessionInterval
-	Status            SessionStatus
+	// TODO TimeRemainingAtStart DB persistance
+	TimeRemainingAtStart time.Duration
+	CurrentInterval      SessionInterval
+	Status               SessionStatus
 }
 
 type ExistingSessionRecord struct {
@@ -72,7 +74,7 @@ type SessionRepo interface {
 	UpdateSession(ctx context.Context, id string, s SessionRecord) (ExistingSessionRecord, error)
 	DeleteSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
-	GetByStatus(ctx context.Context, status ...SessionStatus) ([]ExistingSessionRecord, error)
+	GetSessionsByStatus(ctx context.Context, status ...SessionStatus) ([]ExistingSessionRecord, error)
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
 	DeleteSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
 	GetSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -162,8 +163,13 @@ func TextDisplay(content string) discordgo.TextDisplay {
 	}
 }
 
-func SessionMessageComponents(s Session) []discordgo.MessageComponent {
-	if s.status == pomomo.SessionEnded {
+const (
+	timerBarFilledChar = "⣶"
+	timerBarEmptyChar  = "⡀"
+)
+
+func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
+	if s.Status() == pomomo.SessionEnded {
 		return []discordgo.MessageComponent{
 			getEndMessage(),
 		}
@@ -174,8 +180,8 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 		Style: discordgo.PrimaryButton,
 		CustomID: InteractionID{
 			Type:      "skip",
-			GuildID:   s.guildID,
-			ChannelID: s.channelID,
+			GuildID:   s.GuildID(),
+			ChannelID: s.ChannelID(),
 		}.ToCustomID(),
 	}
 	endButton := discordgo.Button{
@@ -183,8 +189,8 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 		Style: discordgo.DangerButton,
 		CustomID: InteractionID{
 			Type:      "end",
-			GuildID:   s.guildID,
-			ChannelID: s.channelID,
+			GuildID:   s.GuildID(),
+			ChannelID: s.ChannelID(),
 		}.ToCustomID(),
 	}
 
@@ -195,12 +201,12 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 	// settings
 	settingsTextParts := []string{
 		"### Session Settings",
-		fmt.Sprintf("%s: %d min", pomomo.PomodoroInterval, int(s.settings.pomodoro.Minutes())),
-		fmt.Sprintf("%s: %d min", pomomo.ShortBreakInterval, int(s.settings.shortBreak.Minutes())),
-		fmt.Sprintf("%s: %d min", pomomo.LongBreakInterval, int(s.settings.longBreak.Minutes())),
-		fmt.Sprintf("%s: %d | %d", "Interval", s.stats.completedPomodoros%s.settings.intervals, s.settings.intervals),
+		fmt.Sprintf("%s: %d min", pomomo.PomodoroInterval, int(s.Settings.Pomodoro.Minutes())),
+		fmt.Sprintf("%s: %d min", pomomo.ShortBreakInterval, int(s.Settings.ShortBreak.Minutes())),
+		fmt.Sprintf("%s: %d min", pomomo.LongBreakInterval, int(s.Settings.LongBreak.Minutes())),
+		fmt.Sprintf("%s: %d | %d", "Interval", s.Stats.CompletedPomodoros%s.Settings.Intervals, s.Settings.Intervals),
 	}
-	switch s.currentInterval {
+	switch s.CurrentInterval() {
 	case pomomo.PomodoroInterval:
 		settingsTextParts[1] = fmt.Sprintf("**%s**\n%s", settingsTextParts[1], timerBar(s))
 	case pomomo.ShortBreakInterval:
@@ -211,7 +217,7 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 		settingsTextParts = append(settingsTextParts, timerBar(s))
 	}
 	accentColor := ColorGreen
-	if s.status == pomomo.SessionPaused {
+	if s.Status() == pomomo.SessionPaused {
 		accentColor = ColorLightGrey
 	}
 	settingsContainer := discordgo.Container{
@@ -231,11 +237,11 @@ func SessionMessageComponents(s Session) []discordgo.MessageComponent {
 	}
 }
 
-func timerBar(s Session) string {
+func timerBar(s models.Session) string {
 	const length = 20
 	filledChar := timerBarFilledChar
 	emptyChar := timerBarEmptyChar
-	remaining := s.RemainingTime().Minutes()
+	remaining := s.TimeRemaining().Minutes()
 	if remaining <= 0 {
 		return strings.Repeat(emptyChar, length)
 	}

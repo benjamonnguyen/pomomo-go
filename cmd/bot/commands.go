@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
 )
@@ -46,11 +47,11 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	// Parse command options with defaults
-	settings := SessionSettings{
-		pomodoro:   20 * time.Minute,
-		shortBreak: 5 * time.Minute,
-		longBreak:  15 * time.Minute,
-		intervals:  4,
+	settings := models.SessionSettings{
+		Pomodoro:   20 * time.Minute,
+		ShortBreak: 5 * time.Minute,
+		LongBreak:  15 * time.Minute,
+		Intervals:  4,
 	}
 	for _, opt := range data.Options {
 		val, ok := opt.Value.(float64)
@@ -60,13 +61,13 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		intVal := int(val)
 		switch opt.Name {
 		case pomomo.PomodoroOption:
-			settings.pomodoro = time.Duration(intVal) * time.Minute
+			settings.Pomodoro = time.Duration(intVal) * time.Minute
 		case pomomo.ShortBreakOption:
-			settings.shortBreak = time.Duration(intVal) * time.Minute
+			settings.ShortBreak = time.Duration(intVal) * time.Minute
 		case pomomo.LongBreakOption:
-			settings.longBreak = time.Duration(intVal) * time.Minute
+			settings.LongBreak = time.Duration(intVal) * time.Minute
 		case pomomo.IntervalsOption:
-			settings.intervals = intVal
+			settings.Intervals = intVal
 		}
 	}
 
@@ -77,14 +78,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	session := Session{
-		channelID:         m.ChannelID,
-		guildID:           m.GuildID,
-		settings:          settings,
-		currentInterval:   pomomo.PomodoroInterval,
-		intervalStartedAt: time.Now(),
-		status:            pomomo.SessionRunning,
-	}
+	session := models.NewSession("", m.GuildID, m.ChannelID, "", settings)
 	msg, err := h.discordMessenger.Respond(m.Interaction, true, SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
@@ -104,7 +98,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		}
 		return
 	}
-	log.Debug("started session", "id", session.sessionID)
+	log.Debug("started session", "id", session.ID)
 
 	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
 		log.Error("failed to pin message", "err", err)
@@ -149,7 +143,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		}
 		return
 	}
-	log.Debug("skipped interval", "new", session.currentInterval)
+	log.Debug("skipped interval", "new", session.CurrentInterval())
 
 	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
@@ -190,7 +184,7 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 		}
 		return
 	}
-	log.Debug("ended session", "id", session.sessionID)
+	log.Debug("ended session", "id", session.ID)
 
 	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
