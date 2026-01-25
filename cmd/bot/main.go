@@ -41,11 +41,16 @@ func main() {
 		log.Fatal(err)
 	}
 	var dbURL, botToken, botName string
+	var pomodoroSoundPath, longBreakSoundPath, shortBreakSoundPath, idleSoundPath string
 	panicif(cfg.GetMany([]config.Key{
 		pomomo.DatabaseURLKey,
 		pomomo.BotTokenKey,
 		pomomo.BotNameKey,
-	}, &dbURL, &botToken, &botName))
+		pomomo.PomodoroSoundPathKey,
+		pomomo.LongBreakSoundPathKey,
+		pomomo.ShortBreakSoundPathKey,
+		pomomo.IdleSoundPathKey,
+	}, &dbURL, &botToken, &botName, &pomodoroSoundPath, &longBreakSoundPath, &shortBreakSoundPath, &idleSoundPath))
 
 	// db
 	log.Info("opening db", "url", dbURL)
@@ -75,15 +80,43 @@ func main() {
 	// ShardCount:                         1,
 	cl.Client = &http.Client{Timeout: (20 * time.Second)}
 	cl.UserAgent = fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)
+	cl.ShouldReconnectVoiceOnSessionError = false
 	dm := NewDiscordMessenger(cl)
 
-	// service objects
+	audioPlayer := NewAudioPlayer(map[Audio]string{
+		PomodoroAudio:   pomodoroSoundPath,
+		LongBreakAudio:  longBreakSoundPath,
+		ShortBreakAudio: shortBreakSoundPath,
+		IdleAudio:       idleSoundPath,
+	}, cl)
+
+	// session objects
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
 	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
 	sessionManager.OnSessionUpdate(func(ctx context.Context, s models.Session) {
 		_, err := dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
 		if err != nil {
 			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+		}
+	})
+	sessionManager.OnSessionNextInterval(func(ctx context.Context, s models.Session) {
+		switch s.Status() {
+		case pomomo.SessionRunning:
+			var audio Audio
+			switch s.CurrentInterval() {
+			case pomomo.PomodoroInterval:
+				audio = PomodoroAudio
+			case pomomo.LongBreakInterval:
+				audio = LongBreakAudio
+			case pomomo.ShortBreakInterval:
+				audio = ShortBreakAudio
+			}
+			if err := audioPlayer.Play(audio, s.GuildID(), s.ChannelID()); err != nil {
+				log.Error("failed to play interval alert", "audio", audio, "guildID", s.GuildID(), "channelID", s.ChannelID(), "err", err)
+			}
+			log.Debug("played alert", "interval", s.Status())
+			// case pomomo.SessionIdle:
+			// 	audioPlayer.Play(IdleAudio, s.GuildID(), s.ChannelID())
 		}
 	})
 	sessionManager.OnSessionCleanup(func(ctx context.Context, s models.Session) {
@@ -108,7 +141,6 @@ func main() {
 	if err := cl.Open(); err != nil {
 		log.Fatal("Error opening connection", "err", err)
 	}
-	defer cl.Close() //nolint
 	log.Info(botName + " running. Press CTRL-C to exit.")
 
 	// graceful shutdown
@@ -120,6 +152,10 @@ func main() {
 	shutdownTimeout, c := context.WithTimeout(context.Background(), time.Minute)
 	go func() {
 		if err := sessionManager.Shutdown(); err != nil {
+			log.Error(err)
+		}
+		audioPlayer.Close()
+		if err := cl.Close(); err != nil {
 			log.Error(err)
 		}
 		c()

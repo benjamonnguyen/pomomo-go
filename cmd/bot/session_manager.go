@@ -29,6 +29,7 @@ type SessionManager interface {
 	RestoreSessions() error
 
 	OnSessionUpdate(func(context.Context, models.Session))
+	OnSessionNextInterval(func(context.Context, models.Session))
 	OnSessionCleanup(func(context.Context, models.Session))
 	Shutdown() error
 }
@@ -55,8 +56,9 @@ type sessionManager struct {
 	wg        sync.WaitGroup
 	parentCtx context.Context
 
-	onUpdate  func(context.Context, models.Session)
-	onCleanup func(context.Context, models.Session)
+	onUpdate       func(context.Context, models.Session)
+	onNextInterval func(context.Context, models.Session)
+	onCleanup      func(context.Context, models.Session)
 }
 
 func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
@@ -78,6 +80,10 @@ func (m *sessionManager) OnSessionCleanup(f func(context.Context, models.Session
 	m.onCleanup = f
 }
 
+func (m *sessionManager) OnSessionNextInterval(f func(context.Context, models.Session)) {
+	m.onNextInterval = f
+}
+
 func (m *sessionManager) RestoreSessions() error {
 	var toRestore []*models.Session
 	err := m.tx.WithinTransaction(m.parentCtx, func(ctx context.Context) error {
@@ -95,7 +101,9 @@ func (m *sessionManager) RestoreSessions() error {
 			if session.TimeRemaining() < (-1 * time.Hour) {
 				// clean up stale session
 				go func() {
-					m.onCleanup(m.parentCtx, session)
+					if m.onCleanup != nil {
+						m.onCleanup(m.parentCtx, session)
+					}
 				}()
 				continue
 			}
@@ -144,7 +152,7 @@ func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) e
 
 func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
 	m.wg.Go(func() {
-		var updateMu sync.Mutex
+		var updateMu, nextIntervalMu sync.Mutex
 		ticker := time.NewTicker(updateTickRate)
 		for {
 			func() {
@@ -154,15 +162,29 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
 					log.Info("ending update loop - session not found", "key", key.String())
 					return
 				}
+
+				prevStatus := s.CurrentInterval()
 				if err := m.updateSession(ctx, s); err != nil {
 					log.Error("failed to update session interval in timer", "sessionID", s.ID, "err", err)
-				} else if m.onUpdate != nil {
+					return
+				}
+
+				if m.onUpdate != nil {
 					// can't rely on onSessionUpdate to handle ctx timeout - if still locked, skip call
 					go func() {
 						if updateMu.TryLock() {
+							defer updateMu.Unlock()
 							m.onUpdate(ctx, *s)
 						}
-						defer updateMu.Unlock()
+					}()
+				}
+
+				if prevStatus != s.CurrentInterval() && m.onNextInterval != nil {
+					go func() {
+						if nextIntervalMu.TryLock() {
+							defer nextIntervalMu.Unlock()
+							m.onNextInterval(ctx, *s)
+						}
 					}()
 				}
 			}()

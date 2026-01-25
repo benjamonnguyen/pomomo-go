@@ -37,12 +37,10 @@ func NewSession(sessionID, guildID, channelID, messageID string, settings Sessio
 	s := Session{
 		ID: sessionID,
 		record: pomomo.SessionRecord{
-			GuildID:           guildID,
-			ChannelID:         channelID,
-			MessageID:         messageID,
-			Status:            pomomo.SessionRunning,
-			CurrentInterval:   pomomo.PomodoroInterval,
-			IntervalStartedAt: time.Now(),
+			GuildID:   guildID,
+			ChannelID: channelID,
+			MessageID: messageID,
+			Status:    pomomo.SessionRunning,
 		},
 		Settings: settings,
 	}
@@ -76,7 +74,7 @@ func (s Session) CurrentDuration() time.Duration {
 	case pomomo.LongBreakInterval:
 		return s.Settings.LongBreak
 	default:
-		panic("unexpected interval state")
+		return 0
 	}
 }
 
@@ -103,7 +101,7 @@ func (s *Session) GoNextInterval(shouldUpdateStats bool) {
 	s.record.CurrentInterval = next
 
 	// update time/duration
-	if s.record.Status == pomomo.SessionRunning {
+	if s.record.Status == pomomo.SessionRunning && !s.record.IntervalStartedAt.IsZero() {
 		// may need multiple calls to catch up
 		s.record.IntervalStartedAt = s.record.IntervalStartedAt.Add(s.record.TimeRemainingAtStart)
 	} else {
