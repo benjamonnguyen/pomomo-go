@@ -29,6 +29,7 @@ type SessionManager interface {
 	RestoreSessions() error
 
 	OnSessionUpdate(func(context.Context, models.Session))
+	OnSessionCleanup(func(context.Context, models.Session))
 	Shutdown() error
 }
 
@@ -54,7 +55,8 @@ type sessionManager struct {
 	wg        sync.WaitGroup
 	parentCtx context.Context
 
-	onSessionUpdate func(context.Context, models.Session)
+	onUpdate  func(context.Context, models.Session)
+	onCleanup func(context.Context, models.Session)
 }
 
 func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
@@ -72,6 +74,10 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 	}
 }
 
+func (m *sessionManager) OnSessionCleanup(f func(context.Context, models.Session)) {
+	m.onCleanup = f
+}
+
 func (m *sessionManager) RestoreSessions() error {
 	var toRestore []*models.Session
 	err := m.tx.WithinTransaction(m.parentCtx, func(ctx context.Context) error {
@@ -86,7 +92,13 @@ func (m *sessionManager) RestoreSessions() error {
 				return err
 			}
 			session := models.SessionFromExistingRecords(r, existingSettings)
-			// TODO handle stale sessions
+			if session.TimeRemaining() < (-1 * time.Hour) {
+				// clean up stale session
+				go func() {
+					m.onCleanup(m.parentCtx, session)
+				}()
+				continue
+			}
 			for session.TimeRemaining() <= 0 {
 				session.GoNextInterval(true)
 			}
@@ -116,7 +128,7 @@ func (m *sessionManager) HasSession(guildID, channelID string) bool {
 }
 
 func (m *sessionManager) OnSessionUpdate(handler func(context.Context, models.Session)) {
-	m.onSessionUpdate = handler
+	m.onUpdate = handler
 }
 
 func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) error {

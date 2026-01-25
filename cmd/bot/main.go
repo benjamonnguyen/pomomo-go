@@ -81,9 +81,18 @@ func main() {
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
 	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
 	sessionManager.OnSessionUpdate(func(ctx context.Context, s models.Session) {
-		_, err = dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
+		_, err := dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
 		if err != nil {
 			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+		}
+	})
+	sessionManager.OnSessionCleanup(func(ctx context.Context, s models.Session) {
+		_, err := dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
+		if err != nil {
+			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+		}
+		if err := cl.ChannelMessageUnpin(s.ChannelID(), s.MessageID()); err != nil {
+			log.Error("failed to unpin discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
 		}
 	})
 	err = sessionManager.RestoreSessions()
