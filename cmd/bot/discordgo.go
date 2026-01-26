@@ -98,23 +98,23 @@ func GetUser(m *discordgo.Interaction) *discordgo.User {
 }
 
 type InteractionID struct {
-	Type, GuildID, ChannelID string
+	Type    string
+	TextCID pomomo.TextChannelID
 }
 
 func FromCustomID(customID string) (InteractionID, error) {
 	parts := strings.Split(customID, ":")
-	if len(parts) != 3 {
+	if len(parts) != 2 {
 		return InteractionID{}, fmt.Errorf("invalid customID: %s", customID)
 	}
 	return InteractionID{
-		Type:      parts[0],
-		GuildID:   parts[1],
-		ChannelID: parts[2],
+		Type:    parts[0],
+		TextCID: pomomo.TextChannelID(parts[1]),
 	}, nil
 }
 
 func (id InteractionID) ToCustomID() string {
-	return fmt.Sprintf("%s:%s:%s", id.Type, id.GuildID, id.ChannelID)
+	return fmt.Sprintf("%s:%s", id.Type, id.TextCID)
 }
 
 type Color int
@@ -179,18 +179,16 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		Label: "Skip",
 		Style: discordgo.PrimaryButton,
 		CustomID: InteractionID{
-			Type:      "skip",
-			GuildID:   s.Record.GuildID,
-			ChannelID: string(s.Record.TextCID),
+			Type:    "skip",
+			TextCID: s.Record.TextCID,
 		}.ToCustomID(),
 	}
 	endButton := discordgo.Button{
 		Label: "End",
 		Style: discordgo.DangerButton,
 		CustomID: InteractionID{
-			Type:      "end",
-			GuildID:   s.Record.GuildID,
-			ChannelID: string(s.Record.TextCID),
+			Type:    "end",
+			TextCID: s.Record.TextCID,
 		}.ToCustomID(),
 	}
 

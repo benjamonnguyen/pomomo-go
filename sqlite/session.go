@@ -60,7 +60,6 @@ func NewSessionRepo(dbGetter txStdLib.DBGetter, logger log.Logger) pomomo.Sessio
 }
 
 func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error) {
-
 	db := r.dbGetter(ctx)
 	now := time.Now()
 
@@ -235,7 +234,7 @@ func (r *sessionRepo) DeleteSettings(ctx context.Context, id string) (pomomo.Exi
 	}
 
 	db := r.dbGetter(ctx)
-	query := "DELETE FROM session_settings WHERE id = ?"
+	query := "DELETE FROM session_settings WHERE session_id = ?"
 	r.l.Debug("deleting session setting", "query", query, "id", id)
 	if _, err := db.ExecContext(ctx, query, id); err != nil {
 		return pomomo.ExistingSessionSettingsRecord{}, err

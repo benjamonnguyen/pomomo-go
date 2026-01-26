@@ -20,13 +20,16 @@ type startSessionRequest struct {
 }
 
 type SessionManager interface {
-	HasSession(guildID, textCID string) bool
+	HasSession(textCID string) bool
 	StartSession(context.Context, startSessionRequest) (models.Session, error)
-	EndSession(context.Context, sessionKey) (models.Session, error)
-	SkipInterval(context.Context, sessionKey) (models.Session, error)
+	EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
+	SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	// TogglePause(context.Context, sessionKey) (Session, error)
 	RestoreSessions() error
+
+	//
 	HasVoiceConnection(voiceCID string) bool
+	GuildSessionCnt(gid string) int
 
 	// hooks
 	OnSessionUpdate(func(context.Context, models.Session))
@@ -45,13 +48,6 @@ func (k sessionKey) String() string {
 	return fmt.Sprintf("%s:%s", k.guildID, k.channelID)
 }
 
-func key(s models.Session) sessionKey {
-	return sessionKey{
-		guildID:   s.Record.GuildID,
-		channelID: string(s.Record.TextCID),
-	}
-}
-
 type sessionManager struct {
 	repo      pomomo.SessionRepo
 	tx        transactor.Transactor
@@ -66,10 +62,11 @@ type sessionManager struct {
 
 func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
 	cache := sessionCache{
-		sessions:    make(map[sessionKey]*models.Session),
-		locks:       make(map[sessionKey]*sync.Mutex),
-		cancelFuncs: make(map[sessionKey]func()),
-		voiceConns:  make(map[pomomo.VoiceChannelID]struct{}),
+		sessions:         make(map[pomomo.TextChannelID]*models.Session),
+		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
+		cancelFuncs:      make(map[pomomo.TextChannelID]func()),
+		guildSessionCnts: make(map[string]int),
+		voiceConns:       make(map[pomomo.VoiceChannelID]struct{}),
 	}
 
 	return &sessionManager{
@@ -85,6 +82,12 @@ func (m *sessionManager) HasVoiceConnection(voiceCID string) bool {
 	defer m.cache.cacheMu.RUnlock()
 	_, exists := m.cache.voiceConns[pomomo.VoiceChannelID(voiceCID)]
 	return exists
+}
+
+func (m *sessionManager) GuildSessionCnt(gid string) int {
+	m.cache.cacheMu.RLock()
+	defer m.cache.cacheMu.RUnlock()
+	return m.cache.guildSessionCnts[gid]
 }
 
 func (m *sessionManager) OnSessionCleanup(f func(context.Context, models.Session)) {
@@ -110,10 +113,11 @@ func (m *sessionManager) RestoreSessions() error {
 			}
 			session := models.SessionFromExistingRecords(r, existingSettings)
 			if session.TimeRemaining() < (-1 * time.Hour) {
-				// clean up stale session
+				// has been stale for more than an hour
 				go func() {
 					if m.onCleanup != nil {
 						m.onCleanup(m.parentCtx, session)
+						log.Info("cleaned up stale session", "sessionID", session.ID)
 					}
 				}()
 				continue
@@ -133,17 +137,14 @@ func (m *sessionManager) RestoreSessions() error {
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		session := *toRestore[i]
-		m.startUpdateLoop(sessionCtx, key(session))
+		m.startUpdateLoop(sessionCtx, session.Record.TextCID)
 	}
 	log.Info("restored pending sessions", "count", len(toRestore))
 	return nil
 }
 
-func (m *sessionManager) HasSession(guildID, channelID string) bool {
-	return m.cache.Has(sessionKey{
-		guildID:   guildID,
-		channelID: channelID,
-	})
+func (m *sessionManager) HasSession(textCID string) bool {
+	return m.cache.Has(pomomo.TextChannelID(textCID))
 }
 
 func (m *sessionManager) OnSessionUpdate(handler func(context.Context, models.Session)) {
@@ -161,16 +162,16 @@ func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) e
 	})
 }
 
-func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
+func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextChannelID) {
 	m.wg.Go(func() {
 		var updateMu, nextIntervalMu sync.Mutex
 		ticker := time.NewTicker(updateTickRate)
 		for {
 			func() {
-				s, unlock := m.cache.Get(key)
+				s, unlock := m.cache.Get(cid)
 				defer unlock()
 				if s == nil {
-					log.Info("ending update loop - session not found", "key", key.String())
+					log.Info("ending update loop - session not found", "textCID", cid)
 					return
 				}
 
@@ -211,14 +212,13 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, key sessionKey) {
 
 func (m *sessionManager) StartSession(ctx context.Context, req startSessionRequest) (models.Session, error) {
 	session := models.NewSession("", req.guildID, req.textCID, req.voiceCID, req.messageID, req.settings)
-	key := key(session)
 
-	if m.cache.Has(key) {
+	if m.cache.Has(session.Record.TextCID) {
 		return models.Session{}, fmt.Errorf("session already exists for guild %s channel %s", req.guildID, req.textCID)
 	}
 
 	// Execute transaction
-	release := m.cache.Hold(key)
+	release := m.cache.Hold(session.Record.TextCID)
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		// Insert session record
 		inserted, err := m.repo.InsertSession(ctx, session.Record)
@@ -249,14 +249,14 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 	}
 
 	sessionCtxs := m.cache.Add(m.parentCtx, &session)
-	m.startUpdateLoop(sessionCtxs[0], key)
+	m.startUpdateLoop(sessionCtxs[0], session.Record.TextCID)
 	return session, nil
 }
 
-func (m *sessionManager) SkipInterval(ctx context.Context, key sessionKey) (models.Session, error) {
-	s, unlock := m.cache.Get(key)
+func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error) {
+	s, unlock := m.cache.Get(cid)
 	if s == nil {
-		return models.Session{}, fmt.Errorf("session not found for key: %v", key)
+		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
 	}
 	defer unlock()
 
@@ -274,23 +274,22 @@ func (m *sessionManager) SkipInterval(ctx context.Context, key sessionKey) (mode
 	return *s, nil
 }
 
-func (m *sessionManager) EndSession(ctx context.Context, key sessionKey) (models.Session, error) {
-	s, unlock := m.cache.Get(key)
+func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error) {
+	s, unlock := m.cache.Get(cid)
 	if s == nil {
-		return models.Session{}, fmt.Errorf("session not found for key: %v", key)
+		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
 	}
 
 	sessionCopy := *s
 	// Create a new record with ended status for database update
-	endedRecord := sessionCopy.Record
-	endedRecord.Status = pomomo.SessionEnded
+	sessionCopy.Record.Status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		_, err := m.repo.UpdateSession(ctx, sessionCopy.ID, endedRecord)
+		_, err := m.repo.UpdateSession(ctx, s.ID, sessionCopy.Record)
 		if err != nil {
 			return fmt.Errorf("failed to update session status: %w", err)
 		}
 
-		_, err = m.repo.DeleteSettings(ctx, sessionCopy.ID)
+		_, err = m.repo.DeleteSettings(ctx, s.ID)
 		if err != nil {
 			return fmt.Errorf("failed to delete settings: %w", err)
 		}
@@ -301,7 +300,7 @@ func (m *sessionManager) EndSession(ctx context.Context, key sessionKey) (models
 		return models.Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
 
-	m.cache.Remove(key)
+	m.cache.Remove(cid)
 	return sessionCopy, nil
 }
 
@@ -319,11 +318,12 @@ func (m *sessionManager) Shutdown() error {
 // Cache
 
 type sessionCache struct {
-	cacheMu     sync.RWMutex
-	sessions    map[sessionKey]*models.Session
-	locks       map[sessionKey]*sync.Mutex
-	cancelFuncs map[sessionKey]func()
-	voiceConns  map[pomomo.VoiceChannelID]struct{}
+	cacheMu          sync.RWMutex
+	sessions         map[pomomo.TextChannelID]*models.Session
+	locks            map[pomomo.TextChannelID]*sync.Mutex
+	cancelFuncs      map[pomomo.TextChannelID]func()
+	voiceConns       map[pomomo.VoiceChannelID]struct{}
+	guildSessionCnts map[string]int
 }
 
 // Add returns cancellable session contexts
@@ -333,10 +333,10 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 
 	sessionCtxs := make([]context.Context, 0, len(sessions))
 	for _, s := range sessions {
-		key := key(*s)
+		key := s.Record.TextCID
 		_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
 		if exists {
-			panic("session already exists for key: " + key.String())
+			panic("session already exists for key: " + key)
 		}
 		c.locks[key] = &sync.Mutex{}
 		c.sessions[key] = s
@@ -344,65 +344,67 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 		c.cancelFuncs[key] = cancel
 		sessionCtxs = append(sessionCtxs, sessionCtx)
 		c.voiceConns[s.Record.VoiceCID] = struct{}{}
+		c.guildSessionCnts[s.Record.GuildID] += 1
 	}
 
 	return sessionCtxs
 }
 
-func (c *sessionCache) Remove(key sessionKey) {
-	s, _ := c.Get(key)
+func (c *sessionCache) Remove(cid pomomo.TextChannelID) {
+	s, _ := c.Get(cid)
 	if s == nil {
-		log.Debug("session not found", "key", key.String())
+		log.Debug("session not found", "textCID", cid)
 		return
 	}
 
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 
-	c.cancelFuncs[key]()
-	delete(c.cancelFuncs, key)
-	delete(c.sessions, key)
-	delete(c.locks, key)
+	c.cancelFuncs[cid]()
+	delete(c.cancelFuncs, cid)
+	delete(c.sessions, cid)
+	delete(c.locks, cid)
 	delete(c.voiceConns, s.Record.VoiceCID)
+	c.guildSessionCnts[s.Record.GuildID] -= 1
 }
 
-func (c *sessionCache) Get(key sessionKey) (*models.Session, func()) {
+func (c *sessionCache) Get(cid pomomo.TextChannelID) (*models.Session, func()) {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
 
-	_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
+	_, exists := c.locks[cid] // checks locks instead of sessions in case of Hold()
 	if !exists {
 		return nil, nil
 	}
 
-	l := c.locks[key]
+	l := c.locks[cid]
 	l.Lock()
-	return c.sessions[key], l.Unlock
+	return c.sessions[cid], l.Unlock
 }
 
-func (c *sessionCache) Has(key sessionKey) bool {
+func (c *sessionCache) Has(cid pomomo.TextChannelID) bool {
 	c.cacheMu.RLock()
 	defer c.cacheMu.RUnlock()
 
-	_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
+	_, exists := c.locks[cid] // checks locks instead of sessions in case of Hold()
 	return exists
 }
 
-func (c *sessionCache) Hold(key sessionKey) func() {
+func (c *sessionCache) Hold(cid pomomo.TextChannelID) func() {
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
-	if l := c.locks[key]; l != nil {
+	if l := c.locks[cid]; l != nil {
 		l.Lock()
 		return l.Unlock
 	}
 
 	mu := &sync.Mutex{}
 	mu.Lock()
-	c.locks[key] = mu
+	c.locks[cid] = mu
 	return func() {
 		c.cacheMu.Lock()
 		defer c.cacheMu.Unlock()
-		delete(c.locks, key)
+		delete(c.locks, cid)
 		mu.Unlock()
 	}
 }

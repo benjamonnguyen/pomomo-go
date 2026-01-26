@@ -127,6 +127,13 @@ func main() {
 		if err := cl.ChannelMessageUnpin(string(s.Record.TextCID), s.Record.MessageID); err != nil {
 			log.Error("failed to unpin discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
 		}
+		if sessionManager.GuildSessionCnt(s.Record.GuildID) == 0 {
+			if conn := cl.VoiceConnections[string(s.Record.GuildID)]; conn != nil {
+				if err := conn.Disconnect(); err != nil {
+					log.Error(err)
+				}
+			}
+		}
 	})
 	err = sessionManager.RestoreSessions()
 	panicif(err)

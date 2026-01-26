@@ -71,7 +71,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		}
 	}
 
-	if h.sessionManager.HasSession(m.GuildID, m.ChannelID) {
+	if h.sessionManager.HasSession(m.ChannelID) {
 		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
 			log.Error(err)
 		}
@@ -81,7 +81,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	// get voice channel
 	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
 	if err != nil {
-		log.Error("failed to get voice state", "userID", m.Member.User.ID, "guildID", m.GuildID, "err", err)
+		log.Debug("failed to get voice state", "userID", m.Member.User.ID, "guildID", m.GuildID, "err", err)
 		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
 		if err != nil {
 			log.Error(err)
@@ -150,10 +150,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	session, err := h.sessionManager.SkipInterval(h.parentCtx, sessionKey{
-		guildID:   id.GuildID,
-		channelID: id.ChannelID,
-	})
+	session, err := h.sessionManager.SkipInterval(h.parentCtx, id.TextCID)
 	if err != nil {
 		log.Error("failed to skip interval", "err", err)
 		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
@@ -191,10 +188,7 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 		return
 	}
 
-	session, err := h.sessionManager.EndSession(h.parentCtx, sessionKey{
-		guildID:   id.GuildID,
-		channelID: id.ChannelID,
-	})
+	session, err := h.sessionManager.EndSession(h.parentCtx, id.TextCID)
 	if err != nil {
 		log.Error("failed to end session", "err", err)
 		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
@@ -212,7 +206,7 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 	}
 
 	// Unpin the session message
-	if err := s.ChannelMessageUnpin(id.ChannelID, m.Message.ID); err != nil {
+	if err := s.ChannelMessageUnpin(string(id.TextCID), m.Message.ID); err != nil {
 		log.Error("failed to unpin message", "customID", id.ToCustomID(), "message", m.Message.ID, "err", err)
 	}
 }
