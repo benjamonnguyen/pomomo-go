@@ -36,14 +36,18 @@ func (i SessionInterval) String() string {
 	}
 }
 
+type (
+	VoiceChannelID string
+	TextChannelID  string
+)
+
 type SessionRecord struct {
-	GuildID   string
-	ChannelID string
-	MessageID string
+	GuildID, MessageID string
+	VoiceCID           VoiceChannelID
+	TextCID            TextChannelID
 
 	//
-	IntervalStartedAt time.Time
-	// TODO TimeRemainingAtStart DB persistance
+	IntervalStartedAt    time.Time
 	TimeRemainingAtStart time.Duration
 	CurrentInterval      SessionInterval
 	Status               SessionStatus

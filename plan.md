@@ -11,3 +11,6 @@ commands: register-cmds, purge, kill, rest, broadcast
 
 shard_manager
 - rebalance
+
+
+update online docs, top.gg, support server url

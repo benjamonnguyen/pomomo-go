@@ -94,16 +94,16 @@ func main() {
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
 	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
 	sessionManager.OnSessionUpdate(func(ctx context.Context, s models.Session) {
-		_, err := dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
+		_, err := dm.EditChannelMessage(s.Record.TextCID, s.Record.MessageID, SessionMessageComponents(s)...)
 		if err != nil {
-			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+			log.Error("failed to edit discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
 		}
 	})
 	sessionManager.OnSessionNextInterval(func(ctx context.Context, s models.Session) {
-		switch s.Status() {
+		switch s.Record.Status {
 		case pomomo.SessionRunning:
 			var audio Audio
-			switch s.CurrentInterval() {
+			switch s.Record.CurrentInterval {
 			case pomomo.PomodoroInterval:
 				audio = PomodoroAudio
 			case pomomo.LongBreakInterval:
@@ -111,21 +111,21 @@ func main() {
 			case pomomo.ShortBreakInterval:
 				audio = ShortBreakAudio
 			}
-			if err := audioPlayer.Play(audio, s.GuildID(), s.ChannelID()); err != nil {
-				log.Error("failed to play interval alert", "audio", audio, "guildID", s.GuildID(), "channelID", s.ChannelID(), "err", err)
+			if err := audioPlayer.Play(audio, s.Record.GuildID, s.Record.VoiceCID); err != nil {
+				log.Error("failed to play interval alert", "audio", audio, "guildID", s.Record.GuildID, "channelID", s.Record.VoiceCID, "err", err)
 			}
-			log.Debug("played alert", "interval", s.Status())
+			log.Debug("played alert", "interval", s.Record.Status)
 			// case pomomo.SessionIdle:
-			// 	audioPlayer.Play(IdleAudio, s.GuildID(), s.ChannelID())
+			// 	audioPlayer.Play(IdleAudio, s.Record.GuildID, s.Record.VoiceCID)
 		}
 	})
 	sessionManager.OnSessionCleanup(func(ctx context.Context, s models.Session) {
-		_, err := dm.EditChannelMessage(s.ChannelID(), s.MessageID(), SessionMessageComponents(s)...)
+		_, err := dm.EditChannelMessage(s.Record.TextCID, s.Record.MessageID, SessionMessageComponents(s)...)
 		if err != nil {
-			log.Error("failed to edit discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+			log.Error("failed to edit discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
 		}
-		if err := cl.ChannelMessageUnpin(s.ChannelID(), s.MessageID()); err != nil {
-			log.Error("failed to unpin discord channel message", "channelID", s.ChannelID(), "messageID", s.MessageID(), "sessionID", s.ID, "err", err)
+		if err := cl.ChannelMessageUnpin(string(s.Record.TextCID), s.Record.MessageID); err != nil {
+			log.Error("failed to unpin discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
 		}
 	})
 	err = sessionManager.RestoreSessions()

@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -19,7 +20,7 @@ const (
 )
 
 type AudioPlayer interface {
-	Play(audio Audio, gID, cID string) error
+	Play(audio Audio, gID string, cID pomomo.VoiceChannelID) error
 	Close()
 }
 
@@ -61,12 +62,12 @@ func (m *audioPlayer) Close() {
 	wg.Wait()
 }
 
-func (m *audioPlayer) Play(audio Audio, gID, cID string) error {
+func (m *audioPlayer) Play(audio Audio, gID string, cID pomomo.VoiceChannelID) error {
 	audioData := m.audioData[audio]
 	if audioData == nil {
 		panic("no audio data for " + string(audio))
 	}
-	conn, err := m.cl.ChannelVoiceJoin(gID, cID, false, true)
+	conn, err := m.cl.ChannelVoiceJoin(gID, string(cID), false, true)
 	if err != nil {
 		return err
 	}

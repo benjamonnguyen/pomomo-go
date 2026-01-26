@@ -78,7 +78,20 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	session := models.NewSession("", m.GuildID, m.ChannelID, "", settings)
+	// get voice channel
+	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
+	if err != nil {
+		log.Error("failed to get voice state", "userID", m.Member.User.ID, "guildID", m.GuildID, "err", err)
+		h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
+		return
+	}
+	if h.sessionManager.HasVoiceConnection(vs.ChannelID) {
+		h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
+		return
+	}
+
+	session := models.NewSession("", m.GuildID, m.ChannelID, vs.ChannelID, "", settings)
+	session.GoNextInterval(false) // initialize fields for display - "real" session is created by sessionManager
 	msg, err := h.discordMessenger.Respond(m.Interaction, true, SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
@@ -86,7 +99,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	session, err = h.sessionManager.StartSession(h.parentCtx, startSessionRequest{
-		channelID: m.ChannelID,
+		textCID:   m.ChannelID,
 		guildID:   m.GuildID,
 		messageID: msg.ID,
 		settings:  settings,
@@ -104,7 +117,6 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		log.Error("failed to pin message", "err", err)
 	}
 
-	// TODO! go next interval with sound (ffmpeg?)
 	// TODO SessionManager goroutine to update stats with lesser frequency
 
 	// TODO impl Resume/Pause
@@ -143,7 +155,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		}
 		return
 	}
-	log.Debug("skipped interval", "new", session.CurrentInterval())
+	log.Debug("skipped interval", "new", session.Record.CurrentInterval)
 
 	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {

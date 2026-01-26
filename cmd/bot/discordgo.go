@@ -12,7 +12,7 @@ import (
 )
 
 type DiscordMessenger interface {
-	EditChannelMessage(channelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error)
+	EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error)
 	Respond(it *discordgo.Interaction, wait bool, components ...discordgo.MessageComponent) (*discordgo.Message, error)
 	EditResponse(it *discordgo.Interaction, components ...discordgo.MessageComponent) (*discordgo.Message, error)
 	DeferMessageCreate(it *discordgo.Interaction) (followup, error)
@@ -29,9 +29,9 @@ type messenger struct {
 	client *discordgo.Session
 }
 
-func (m *messenger) EditChannelMessage(channelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
+func (m *messenger) EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
 	return m.client.ChannelMessageEditComplex(&discordgo.MessageEdit{
-		Channel:    channelID,
+		Channel:    string(cID),
 		ID:         messageID,
 		Flags:      discordgo.MessageFlagsIsComponentsV2,
 		Components: &components,
@@ -169,7 +169,7 @@ const (
 )
 
 func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
-	if s.Status() == pomomo.SessionEnded {
+	if s.Record.Status == pomomo.SessionEnded {
 		return []discordgo.MessageComponent{
 			getEndMessage(),
 		}
@@ -180,8 +180,8 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		Style: discordgo.PrimaryButton,
 		CustomID: InteractionID{
 			Type:      "skip",
-			GuildID:   s.GuildID(),
-			ChannelID: s.ChannelID(),
+			GuildID:   s.Record.GuildID,
+			ChannelID: string(s.Record.TextCID),
 		}.ToCustomID(),
 	}
 	endButton := discordgo.Button{
@@ -189,8 +189,8 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		Style: discordgo.DangerButton,
 		CustomID: InteractionID{
 			Type:      "end",
-			GuildID:   s.GuildID(),
-			ChannelID: s.ChannelID(),
+			GuildID:   s.Record.GuildID,
+			ChannelID: string(s.Record.TextCID),
 		}.ToCustomID(),
 	}
 
@@ -206,7 +206,7 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		fmt.Sprintf("%s: %d min", pomomo.LongBreakInterval, int(s.Settings.LongBreak.Minutes())),
 		fmt.Sprintf("%s: %d | %d", "Interval", s.Stats.CompletedPomodoros%s.Settings.Intervals, s.Settings.Intervals),
 	}
-	switch s.CurrentInterval() {
+	switch s.Record.CurrentInterval {
 	case pomomo.PomodoroInterval:
 		settingsTextParts[1] = fmt.Sprintf("**%s**\n%s", settingsTextParts[1], timerBar(s))
 	case pomomo.ShortBreakInterval:
@@ -217,7 +217,7 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		settingsTextParts = append(settingsTextParts, timerBar(s))
 	}
 	accentColor := ColorGreen
-	if s.Status() == pomomo.SessionPaused {
+	if s.Record.Status == pomomo.SessionPaused {
 		accentColor = ColorLightGrey
 	}
 	settingsContainer := discordgo.Container{
