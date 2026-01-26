@@ -1,5 +1,6 @@
-- sound alert
 - autoshush
+
+- in case interactive message isn't deleted, can crash program
 
 - commands.go integration tests
 - stats

@@ -28,7 +28,7 @@ type SessionManager interface {
 	RestoreSessions() error
 
 	//
-	HasVoiceConnection(voiceCID string) bool
+	HasVoiceSession(voiceCID string) bool
 	GuildSessionCnt(gid string) int
 
 	// hooks
@@ -38,14 +38,6 @@ type SessionManager interface {
 
 	//
 	Shutdown() error
-}
-
-type sessionKey struct {
-	guildID, channelID string
-}
-
-func (k sessionKey) String() string {
-	return fmt.Sprintf("%s:%s", k.guildID, k.channelID)
 }
 
 type sessionManager struct {
@@ -77,7 +69,7 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 	}
 }
 
-func (m *sessionManager) HasVoiceConnection(voiceCID string) bool {
+func (m *sessionManager) HasVoiceSession(voiceCID string) bool {
 	m.cache.cacheMu.RLock()
 	defer m.cache.cacheMu.RUnlock()
 	_, exists := m.cache.voiceConns[pomomo.VoiceChannelID(voiceCID)]
@@ -115,9 +107,15 @@ func (m *sessionManager) RestoreSessions() error {
 			if session.TimeRemaining() < (-1 * time.Hour) {
 				// has been stale for more than an hour
 				go func() {
+					log.Info("ending stale session", "sessionID", session.ID)
+					_, err := m.repo.DeleteSession(m.parentCtx, session.ID)
+					if err != nil {
+						log.Error(err)
+						return
+					}
 					if m.onCleanup != nil {
+						session.Record.Status = pomomo.SessionEnded
 						m.onCleanup(m.parentCtx, session)
-						log.Info("cleaned up stale session", "sessionID", session.ID)
 					}
 				}()
 				continue

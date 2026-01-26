@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/binary"
 	"io"
 	"os"
 	"sync"
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/bwmarrin/discordgo"
+	"github.com/charmbracelet/log"
 )
 
 type Audio uint8
@@ -25,31 +27,53 @@ type AudioPlayer interface {
 }
 
 func NewAudioPlayer(audioToOpusContainerPath map[Audio]string, cl *discordgo.Session) AudioPlayer {
-	audioData := make(map[Audio][]byte)
-	loadAudio := func(audio Audio, opusContainerPath string) {
+	audioPackets := make(map[Audio][][]byte)
+	loadPackets := func(audio Audio, opusContainerPath string) {
+		if opusContainerPath == "" {
+			log.Info("no opusContainerPath - skip loading", "audio", audio)
+			return
+		}
+		log.Info("loading packets", "audio", audio, "opusContainerPath", opusContainerPath)
 		f, err := os.Open(opusContainerPath)
 		if err != nil {
 			panic(err)
 		}
+		defer f.Close() //nolint
 
-		data, err := io.ReadAll(f)
-		if err != nil {
-			panic(err)
+		var frameLen int16
+		// Don't wait for the first tick, run immediately.
+		for {
+			err = binary.Read(f, binary.LittleEndian, &frameLen)
+			if err != nil {
+				if err == io.EOF {
+					return
+				}
+				panic("error reading file: " + err.Error())
+			}
+
+			// Read encoded pcm from dca file.
+			packet := make([]byte, frameLen)
+			if err := binary.Read(f, binary.LittleEndian, &packet); err != nil {
+				// Should not be any end of file errors
+				panic(err)
+			}
+
+			// Append encoded pcm data to the buffer.
+			audioPackets[audio] = append(audioPackets[audio], packet)
 		}
-		audioData[audio] = data
 	}
 	for audio, opusContainerPath := range audioToOpusContainerPath {
-		loadAudio(audio, opusContainerPath)
+		loadPackets(audio, opusContainerPath)
 	}
 	return &audioPlayer{
-		audioData: audioData,
-		cl:        cl,
+		audioPackets: audioPackets,
+		cl:           cl,
 	}
 }
 
 type audioPlayer struct {
-	audioData map[Audio][]byte
-	cl        *discordgo.Session
+	audioPackets map[Audio][][]byte
+	cl           *discordgo.Session
 }
 
 func (m *audioPlayer) Close() {
@@ -63,9 +87,10 @@ func (m *audioPlayer) Close() {
 }
 
 func (m *audioPlayer) Play(audio Audio, gID string, cID pomomo.VoiceChannelID) error {
-	audioData := m.audioData[audio]
-	if audioData == nil {
-		panic("no audio data for " + string(audio))
+	packets := m.audioPackets[audio]
+	if packets == nil {
+		log.Debug("no audio packets found - skipping play", "audio", audio)
+		return nil
 	}
 	conn, err := m.cl.ChannelVoiceJoin(gID, string(cID), false, true)
 	if err != nil {
@@ -74,6 +99,8 @@ func (m *audioPlayer) Play(audio Audio, gID string, cID pomomo.VoiceChannelID) e
 	if err := conn.Speaking(true); err != nil {
 		return err
 	}
-	conn.OpusSend <- audioData
+	for _, p := range packets {
+		conn.OpusSend <- p
+	}
 	return conn.Speaking(false)
 }

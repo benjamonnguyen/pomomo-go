@@ -80,7 +80,7 @@ func main() {
 	// ShardCount:                         1,
 	cl.Client = &http.Client{Timeout: (20 * time.Second)}
 	cl.UserAgent = fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)
-	cl.ShouldReconnectVoiceOnSessionError = false
+	cl.ShouldReconnectVoiceOnSessionError = true
 	dm := NewDiscordMessenger(cl)
 
 	audioPlayer := NewAudioPlayer(map[Audio]string{
@@ -113,8 +113,9 @@ func main() {
 			}
 			if err := audioPlayer.Play(audio, s.Record.GuildID, s.Record.VoiceCID); err != nil {
 				log.Error("failed to play interval alert", "audio", audio, "guildID", s.Record.GuildID, "channelID", s.Record.VoiceCID, "err", err)
+			} else {
+				log.Debug("played alert", "status", s.Record.Status, "audio", audio)
 			}
-			log.Debug("played alert", "interval", s.Record.Status)
 			// case pomomo.SessionIdle:
 			// 	audioPlayer.Play(IdleAudio, s.Record.GuildID, s.Record.VoiceCID)
 		}

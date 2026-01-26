@@ -71,6 +71,14 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		}
 	}
 
+	// TODO multisession
+	if h.sessionManager.GuildSessionCnt(m.GuildID) > 0 {
+		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo is limited to one session per server for now.")); err != nil {
+			log.Error(err)
+		}
+		return
+	}
+
 	if h.sessionManager.HasSession(m.ChannelID) {
 		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
 			log.Error(err)
@@ -88,7 +96,7 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 		}
 		return
 	}
-	if h.sessionManager.HasVoiceConnection(vs.ChannelID) {
+	if h.sessionManager.HasVoiceSession(vs.ChannelID) {
 		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
 		if err != nil {
 			log.Error(err)

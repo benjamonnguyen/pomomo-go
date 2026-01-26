@@ -15,6 +15,8 @@ replace github.com/benjamonnguyen/deadsimple/database v0.0.0 => ../deadsimple/da
 
 replace github.com/benjamonnguyen/deadsimple/config v0.0.0 => ../deadsimple/config
 
+replace github.com/bwmarrin/discordgo v0.29.0 => ../discordgo
+
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
@@ -39,7 +41,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	modernc.org/libc v1.66.10 // indirect
