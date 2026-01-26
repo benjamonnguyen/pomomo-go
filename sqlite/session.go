@@ -16,14 +16,15 @@ import (
 )
 
 const (
-	SelectAllSessions = "SELECT id, guild_id, channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at FROM sessions"
+	SelectAllSessions = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at FROM sessions"
 	SelectAllSettings = "SELECT session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at FROM session_settings"
 )
 
 type sessionEntity struct {
 	ID                     string
 	GuildID                string
-	ChannelID              string
+	TextChannelID          string
+	VoiceChannelID         string
 	MessageID              string
 	IntervalStartedAt      int64
 	TimeRemainingAtStartMS int64
@@ -59,9 +60,6 @@ func NewSessionRepo(dbGetter txStdLib.DBGetter, logger log.Logger) pomomo.Sessio
 }
 
 func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error) {
-	if session.GuildID == "" || session.ChannelID == "" {
-		return pomomo.ExistingSessionRecord{}, fmt.Errorf("provide required fields 'GuildID' and 'ChannelID'")
-	}
 
 	db := r.dbGetter(ctx)
 	now := time.Now()
@@ -79,7 +77,8 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 	args := []any{
 		e.ID,
 		e.GuildID,
-		e.ChannelID,
+		e.TextChannelID,
+		e.VoiceChannelID,
 		e.MessageID,
 		e.IntervalStartedAt,
 		e.TimeRemainingAtStartMS,
@@ -88,7 +87,7 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO sessions (id, guild_id, channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -108,10 +107,11 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id string, s pomomo.Ses
 	existing.UpdatedAt = time.Now()
 	e := mapToSessionEntity(existing)
 
-	query := "UPDATE sessions SET guild_id = ?, channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, updated_at = ? WHERE id = ?"
+	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, updated_at = ? WHERE id = ?"
 	args := []any{
 		e.GuildID,
-		e.ChannelID,
+		e.TextChannelID,
+		e.VoiceChannelID,
 		e.MessageID,
 		e.IntervalStartedAt,
 		e.TimeRemainingAtStartMS,
@@ -260,7 +260,7 @@ func (r *sessionRepo) GetSettings(ctx context.Context, id string) (pomomo.Existi
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity
-	if err := s.Scan(&e.ID, &e.GuildID, &e.ChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionRecord{}, ErrNotFound
 		}
@@ -286,7 +286,8 @@ func mapToSessionEntity(session pomomo.ExistingSessionRecord) sessionEntity {
 	return sessionEntity{
 		ID:                     session.ID,
 		GuildID:                session.GuildID,
-		ChannelID:              session.ChannelID,
+		TextChannelID:          string(session.TextCID),
+		VoiceChannelID:         string(session.VoiceCID),
 		MessageID:              session.MessageID,
 		IntervalStartedAt:      session.IntervalStartedAt.Unix(),
 		TimeRemainingAtStartMS: session.TimeRemainingAtStart.Milliseconds(),
@@ -318,7 +319,8 @@ func mapToExistingSessionRecord(e sessionEntity) pomomo.ExistingSessionRecord {
 		},
 		SessionRecord: pomomo.SessionRecord{
 			GuildID:              e.GuildID,
-			ChannelID:            e.ChannelID,
+			TextCID:              pomomo.TextChannelID(e.TextChannelID),
+			VoiceCID:             pomomo.VoiceChannelID(e.VoiceChannelID),
 			MessageID:            e.MessageID,
 			IntervalStartedAt:    time.Unix(int64(e.IntervalStartedAt), 0),
 			TimeRemainingAtStart: time.Duration(e.TimeRemainingAtStartMS) * time.Millisecond,

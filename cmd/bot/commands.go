@@ -82,11 +82,17 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
 	if err != nil {
 		log.Error("failed to get voice state", "userID", m.Member.User.ID, "guildID", m.GuildID, "err", err)
-		h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
+		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
+		if err != nil {
+			log.Error(err)
+		}
 		return
 	}
 	if h.sessionManager.HasVoiceConnection(vs.ChannelID) {
-		h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
+		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
+		if err != nil {
+			log.Error(err)
+		}
 		return
 	}
 
@@ -99,8 +105,9 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	session, err = h.sessionManager.StartSession(h.parentCtx, startSessionRequest{
-		textCID:   m.ChannelID,
 		guildID:   m.GuildID,
+		textCID:   m.ChannelID,
+		voiceCID:  vs.ChannelID,
 		messageID: msg.ID,
 		settings:  settings,
 	})
