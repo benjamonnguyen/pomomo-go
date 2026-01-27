@@ -7,6 +7,21 @@ import (
 	"github.com/benjamonnguyen/pomomo-go"
 )
 
+type SessionParticipant struct {
+	UserID, SessionID   string
+	IsMuted, IsDeafened bool
+	StartedIntervalAt   time.Time
+}
+
+type SessionSettings struct {
+	Pomodoro, ShortBreak, LongBreak time.Duration
+	Intervals                       int
+}
+
+type SessionStats struct {
+	CompletedPomodoros int
+}
+
 type Session struct {
 	ID       string
 	Settings SessionSettings
@@ -47,15 +62,6 @@ func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, setting
 	}
 	s.Record.TimeRemainingAtStart = s.CurrentDuration()
 	return s
-}
-
-type SessionSettings struct {
-	Pomodoro, ShortBreak, LongBreak time.Duration
-	Intervals                       int
-}
-
-type SessionStats struct {
-	CompletedPomodoros int
 }
 
 func (s Session) TimeRemaining() time.Duration {

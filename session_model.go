@@ -90,7 +90,14 @@ type SessionRepo interface {
 	DeleteSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
 	GetSessionsByStatus(ctx context.Context, status ...SessionStatus) ([]ExistingSessionRecord, error)
+
+	// settings
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
 	DeleteSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
 	GetSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
+
+	// participants
+	InsertParticipant(context.Context, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
+	DeleteParticipant(ctx context.Context, id string) (ExistingSessionParticipantRecord, error)
+	GetAllParticipants(ctx context.Context) ([]ExistingSessionParticipantRecord, error)
 }
