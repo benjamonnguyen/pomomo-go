@@ -1,5 +1,7 @@
-- autoshush
+# autoshush
 
+
+# TODO
 - in case interactive message isn't deleted, can crash program
 
 - commands.go integration tests

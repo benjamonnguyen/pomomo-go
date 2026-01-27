@@ -11,6 +11,19 @@ pomomo-go is a Discord bot that facilitates Pomodoro sessions
 - `cmd/register`: Registration tool for Discord commands
 - `sqlite`: Database repository implementations
 
+## sqlite
+- always use `migrate create -ext sql -dir cmd/bot/migrations -seq <name>` to create migrations
+
+## Database Patterns
+
+- **Transactions**: Use transactor pattern for atomic operations
+```go
+err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+    // database operations
+    return nil
+})
+```
+
 ## Commands
 
 ### Building

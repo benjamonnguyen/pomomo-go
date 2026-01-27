@@ -37,8 +37,10 @@ func (i SessionInterval) String() string {
 }
 
 type (
-	VoiceChannelID string
-	TextChannelID  string
+	SessionID            string
+	SessionParticipantID string
+	VoiceChannelID       string
+	TextChannelID        string
 )
 
 type SessionRecord struct {
@@ -54,12 +56,24 @@ type SessionRecord struct {
 }
 
 type ExistingSessionRecord struct {
-	DBRow
+	ExistingRecord[SessionID]
 	SessionRecord
 }
 
+type SessionParticipantRecord struct {
+	SessionID           SessionID
+	UserID              string
+	VoiceCID            VoiceChannelID
+	IsMuted, IsDeafened string
+}
+
+type ExistingSessionParticipantRecord struct {
+	ExistingRecord[SessionParticipantID]
+	SessionParticipantRecord
+}
+
 type SessionSettingsRecord struct {
-	SessionID string
+	SessionID SessionID
 
 	//
 	Pomodoro   time.Duration
@@ -69,17 +83,24 @@ type SessionSettingsRecord struct {
 }
 
 type ExistingSessionSettingsRecord struct {
-	DBRow
+	ExistingRecord[SessionID]
 	SessionSettingsRecord
 }
 
 type SessionRepo interface {
 	InsertSession(context.Context, SessionRecord) (ExistingSessionRecord, error)
-	UpdateSession(ctx context.Context, id string, s SessionRecord) (ExistingSessionRecord, error)
-	DeleteSession(ctx context.Context, id string) (ExistingSessionRecord, error)
-	GetSession(ctx context.Context, id string) (ExistingSessionRecord, error)
-	GetSessionsByStatus(ctx context.Context, status ...SessionStatus) ([]ExistingSessionRecord, error)
+	UpdateSession(context.Context, SessionID, SessionRecord) (ExistingSessionRecord, error)
+	DeleteSession(context.Context, SessionID) (ExistingSessionRecord, error)
+	GetSession(context.Context, SessionID) (ExistingSessionRecord, error)
+	GetSessionsByStatus(context.Context, ...SessionStatus) ([]ExistingSessionRecord, error)
+
+	// settings
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
-	DeleteSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
-	GetSettings(ctx context.Context, id string) (ExistingSessionSettingsRecord, error)
+	GetSettings(context.Context, SessionID) (ExistingSessionSettingsRecord, error)
+	// settings are only cascade deleted
+
+	// participants
+	InsertParticipant(context.Context, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
+	DeleteParticipant(context.Context, SessionParticipantID) (ExistingSessionParticipantRecord, error)
+	GetAllParticipants(context.Context) ([]ExistingSessionParticipantRecord, error)
 }

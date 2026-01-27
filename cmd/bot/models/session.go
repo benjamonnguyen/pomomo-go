@@ -7,10 +7,26 @@ import (
 	"github.com/benjamonnguyen/pomomo-go"
 )
 
+type SessionParticipant struct {
+	ID                  pomomo.SessionParticipantID
+	UserID              string
+	IsMuted, IsDeafened bool
+	StartedIntervalAt   time.Time
+}
+
+type SessionSettings struct {
+	Pomodoro, ShortBreak, LongBreak time.Duration
+	Intervals                       int
+}
+
+type SessionStats struct {
+	CompletedPomodoros int
+}
+
 type Session struct {
-	ID       string
+	ID       pomomo.SessionID
 	Settings SessionSettings
-	Stats    SessionStats
+	Stats    SessionStats // TODO maybe extract stats, handle updates in an update hook
 	Record   pomomo.SessionRecord
 }
 
@@ -35,7 +51,7 @@ func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, setting
 		panic("missing required IDs")
 	}
 	s := Session{
-		ID: sessionID,
+		ID: pomomo.SessionID(sessionID),
 		Record: pomomo.SessionRecord{
 			GuildID:   guildID,
 			VoiceCID:  pomomo.VoiceChannelID(voiceCID),
@@ -47,15 +63,6 @@ func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, setting
 	}
 	s.Record.TimeRemainingAtStart = s.CurrentDuration()
 	return s
-}
-
-type SessionSettings struct {
-	Pomodoro, ShortBreak, LongBreak time.Duration
-	Intervals                       int
-}
-
-type SessionStats struct {
-	CompletedPomodoros int
 }
 
 func (s Session) TimeRemaining() time.Duration {
