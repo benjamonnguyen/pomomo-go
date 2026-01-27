@@ -14,6 +14,12 @@ pomomo-go is a Discord bot that facilitates Pomodoro sessions
 ## sqlite
 - always use `migrate create -ext sql -dir cmd/bot/migrations -seq <name>` to create migrations
 
+## Rules
+- Only edit referenced files. Prompt user for permission if trying to edit other files.
+
+## Directives
+- `@implement`: When present in referenced file(s), only act on these directives. For example, all TODO comments should be ignore for the scope of this prompt.
+
 ## Database Patterns
 
 - **Transactions**: Use transactor pattern for atomic operations

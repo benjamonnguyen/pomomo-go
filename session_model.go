@@ -53,6 +53,7 @@ type SessionRecord struct {
 	TimeRemainingAtStart time.Duration
 	CurrentInterval      SessionInterval
 	Status               SessionStatus
+	NoDeafen             bool
 }
 
 type ExistingSessionRecord struct {
@@ -60,11 +61,16 @@ type ExistingSessionRecord struct {
 	SessionRecord
 }
 
+type VoiceState struct {
+	Mute, Deaf bool
+}
+
 type SessionParticipantRecord struct {
 	SessionID           SessionID
+	GuildID             string
 	UserID              string
 	VoiceCID            VoiceChannelID
-	IsMuted, IsDeafened string
+	IsMuted, IsDeafened bool
 }
 
 type ExistingSessionParticipantRecord struct {
@@ -97,10 +103,11 @@ type SessionRepo interface {
 	// settings
 	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
 	GetSettings(context.Context, SessionID) (ExistingSessionSettingsRecord, error)
-	// settings are only cascade deleted
+	DeleteSettings(context.Context, SessionID) (ExistingSessionSettingsRecord, error)
 
 	// participants
 	InsertParticipant(context.Context, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
+	UpdateParticipant(context.Context, SessionParticipantID, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
 	DeleteParticipant(context.Context, SessionParticipantID) (ExistingSessionParticipantRecord, error)
 	GetAllParticipants(context.Context) ([]ExistingSessionParticipantRecord, error)
 }

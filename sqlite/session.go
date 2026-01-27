@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	SelectAllSessions     = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at FROM sessions"
+	SelectAllSessions     = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, no_deafen, created_at, updated_at FROM sessions"
 	SelectAllSettings     = "SELECT session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at FROM session_settings"
-	SelectAllParticipants = "SELECT id, user_id, session_id, voice_channel_id, is_muted, is_deafened, created_at, updated_at FROM session_participants"
+	SelectAllParticipants = "SELECT id, user_id, session_id, guild_id, voice_channel_id, is_muted, is_deafened, created_at, updated_at FROM session_participants"
+	UpdateParticipant     = "UPDATE session_participants SET user_id = ?, session_id = ?, guild_id = ?, voice_channel_id = ?, is_muted = ?, is_deafened = ?, updated_at = ? WHERE id = ?"
 )
 
 type sessionEntity struct {
@@ -32,6 +33,7 @@ type sessionEntity struct {
 	TimeRemainingAtStartMS int64
 	CurrentInterval        uint8
 	Status                 uint8
+	NoDeafen               bool
 	CreatedAt              int64
 	UpdatedAt              int64
 }
@@ -50,9 +52,10 @@ type sessionParticipantEntity struct {
 	ID             string
 	UserID         string
 	SessionID      string
+	GuildID        string
 	VoiceChannelID string
-	IsMuted        string
-	IsDeafened     string
+	IsMuted        bool
+	IsDeafened     bool
 	CreatedAt      int64
 	UpdatedAt      int64
 }
@@ -90,10 +93,11 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
+		e.NoDeafen,
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, no_deafen, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -113,7 +117,7 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 	existing.UpdatedAt = time.Now()
 	e := mapToSessionEntity(existing)
 
-	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, updated_at = ? WHERE id = ?"
+	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, no_deafen = ?, updated_at = ? WHERE id = ?"
 	args := []any{
 		e.GuildID,
 		e.TextChannelID,
@@ -123,6 +127,7 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
+		e.NoDeafen,
 		e.UpdatedAt,
 		e.ID,
 	}
@@ -229,6 +234,22 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 	return existingRecord, nil
 }
 
+func (r *sessionRepo) DeleteSettings(ctx context.Context, id pomomo.SessionID) (pomomo.ExistingSessionSettingsRecord, error) {
+	existing, err := r.GetSettings(ctx, id)
+	if err != nil {
+		return pomomo.ExistingSessionSettingsRecord{}, err
+	}
+
+	db := r.dbGetter(ctx)
+	query := "DELETE FROM session_settings WHERE session_id = ?"
+	r.l.Debug("deleting session settings", "query", query, "session_id", id)
+	if _, err := db.ExecContext(ctx, query, id); err != nil {
+		return pomomo.ExistingSessionSettingsRecord{}, err
+	}
+
+	return existing, nil
+}
+
 func (r *sessionRepo) GetSettings(ctx context.Context, id pomomo.SessionID) (pomomo.ExistingSessionSettingsRecord, error) {
 	if id == "" {
 		return pomomo.ExistingSessionSettingsRecord{}, fmt.Errorf("provide id")
@@ -244,8 +265,8 @@ func (r *sessionRepo) GetSettings(ctx context.Context, id pomomo.SessionID) (pom
 }
 
 func (r *sessionRepo) InsertParticipant(ctx context.Context, participant pomomo.SessionParticipantRecord) (pomomo.ExistingSessionParticipantRecord, error) {
-	if participant.UserID == "" || participant.SessionID == "" {
-		return pomomo.ExistingSessionParticipantRecord{}, fmt.Errorf("provide required fields 'UserID' and 'SessionID'")
+	if participant.UserID == "" || participant.SessionID == "" || participant.GuildID == "" {
+		return pomomo.ExistingSessionParticipantRecord{}, fmt.Errorf("provide required fields 'UserID', 'SessionID', and 'GuildID'")
 	}
 
 	db := r.dbGetter(ctx)
@@ -260,13 +281,14 @@ func (r *sessionRepo) InsertParticipant(ctx context.Context, participant pomomo.
 		e.ID,
 		e.UserID,
 		e.SessionID,
+		e.GuildID,
 		e.VoiceChannelID,
 		e.IsMuted,
 		e.IsDeafened,
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO session_participants (id, user_id, session_id, voice_channel_id, is_muted, is_deafened, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO session_participants (id, user_id, session_id, guild_id, voice_channel_id, is_muted, is_deafened, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session participant", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -286,6 +308,35 @@ func (r *sessionRepo) DeleteParticipant(ctx context.Context, id pomomo.SessionPa
 	query := "DELETE FROM session_participants WHERE id = ?"
 	r.l.Debug("deleting session participant", "query", query, "id", id)
 	if _, err := db.ExecContext(ctx, query, id); err != nil {
+		return pomomo.ExistingSessionParticipantRecord{}, err
+	}
+
+	return existing, nil
+}
+
+func (r *sessionRepo) UpdateParticipant(ctx context.Context, id pomomo.SessionParticipantID, participant pomomo.SessionParticipantRecord) (pomomo.ExistingSessionParticipantRecord, error) {
+	existing, err := r.getParticipantByID(ctx, id)
+	if err != nil {
+		return existing, err
+	}
+
+	existing.SessionParticipantRecord = participant
+	existing.UpdatedAt = time.Now()
+	e := mapToParticipantEntity(existing)
+
+	args := []any{
+		e.UserID,
+		e.SessionID,
+		e.GuildID,
+		e.VoiceChannelID,
+		e.IsMuted,
+		e.IsDeafened,
+		e.UpdatedAt,
+		e.ID,
+	}
+	r.l.Debug("updating participant", "query", UpdateParticipant, "args", args)
+	_, err = r.dbGetter(ctx).ExecContext(ctx, UpdateParticipant, args...)
+	if err != nil {
 		return pomomo.ExistingSessionParticipantRecord{}, err
 	}
 
@@ -332,7 +383,7 @@ func (r *sessionRepo) GetAllParticipants(ctx context.Context) ([]pomomo.Existing
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity
-	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.NoDeafen, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionRecord{}, ErrNotFound
 		}
@@ -356,7 +407,7 @@ func extractSessionSettings(s sqliteutil.Scannable) (pomomo.ExistingSessionSetti
 
 func extractParticipant(s sqliteutil.Scannable) (pomomo.ExistingSessionParticipantRecord, error) {
 	var e sessionParticipantEntity
-	if err := s.Scan(&e.ID, &e.UserID, &e.SessionID, &e.VoiceChannelID, &e.IsMuted, &e.IsDeafened, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.UserID, &e.SessionID, &e.GuildID, &e.VoiceChannelID, &e.IsMuted, &e.IsDeafened, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionParticipantRecord{}, ErrNotFound
 		}
@@ -377,6 +428,7 @@ func mapToSessionEntity(session pomomo.ExistingSessionRecord) sessionEntity {
 		TimeRemainingAtStartMS: session.TimeRemainingAtStart.Milliseconds(),
 		CurrentInterval:        uint8(session.CurrentInterval),
 		Status:                 uint8(session.Status),
+		NoDeafen:               session.NoDeafen,
 		CreatedAt:              session.CreatedAt.Unix(),
 		UpdatedAt:              session.UpdatedAt.Unix(),
 	}
@@ -410,6 +462,7 @@ func mapToExistingSessionRecord(e sessionEntity) pomomo.ExistingSessionRecord {
 			TimeRemainingAtStart: time.Duration(e.TimeRemainingAtStartMS) * time.Millisecond,
 			CurrentInterval:      pomomo.SessionInterval(e.CurrentInterval),
 			Status:               pomomo.SessionStatus(e.Status),
+			NoDeafen:             e.NoDeafen,
 		},
 	}
 }
@@ -436,6 +489,7 @@ func mapToParticipantEntity(participant pomomo.ExistingSessionParticipantRecord)
 		ID:             string(participant.ID),
 		UserID:         participant.UserID,
 		SessionID:      string(participant.SessionID),
+		GuildID:        participant.GuildID,
 		VoiceChannelID: string(participant.VoiceCID),
 		IsMuted:        participant.IsMuted,
 		IsDeafened:     participant.IsDeafened,
@@ -454,6 +508,7 @@ func mapToExistingParticipantRecord(e sessionParticipantEntity) pomomo.ExistingS
 		SessionParticipantRecord: pomomo.SessionParticipantRecord{
 			UserID:     e.UserID,
 			SessionID:  pomomo.SessionID(e.SessionID),
+			GuildID:    e.GuildID,
 			VoiceCID:   pomomo.VoiceChannelID(e.VoiceChannelID),
 			IsMuted:    e.IsMuted,
 			IsDeafened: e.IsDeafened,

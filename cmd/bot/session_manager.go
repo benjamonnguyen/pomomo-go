@@ -16,7 +16,13 @@ var updateTickRate = 20 * time.Second
 
 type startSessionRequest struct {
 	guildID, textCID, voiceCID, messageID string
-	settings                              models.SessionSettings
+
+	// user that is starting the session to be joined as participant
+	user struct {
+		id         string
+		mute, deaf bool
+	}
+	settings models.SessionSettings
 }
 
 type SessionManager interface {
@@ -25,15 +31,15 @@ type SessionManager interface {
 	EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	// TogglePause(context.Context, sessionKey) (Session, error)
-	RestoreSessions() error
+	RestoreSessions(context.Context) error
 
 	//
 	HasVoiceSession(voiceCID string) bool
 	GuildSessionCnt(gid string) int
 
 	// hooks
-	OnSessionUpdate(func(context.Context, models.Session))
-	OnSessionNextInterval(func(context.Context, models.Session))
+	OnSessionUpdate(func(ctx context.Context, before, curr models.Session))
+	OnSessionRestore(func(context.Context, models.Session))
 	OnSessionCleanup(func(context.Context, models.Session))
 
 	//
@@ -46,13 +52,14 @@ type sessionManager struct {
 	cache     *sessionCache
 	wg        sync.WaitGroup
 	parentCtx context.Context
+	pp        ParticipantsProvider
 
-	onUpdate       func(context.Context, models.Session)
-	onNextInterval func(context.Context, models.Session)
-	onCleanup      func(context.Context, models.Session)
+	onRestore func(context.Context, models.Session)
+	onUpdate  func(ctx context.Context, before, curr models.Session)
+	onCleanup func(context.Context, models.Session)
 }
 
-func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transactor.Transactor) SessionManager {
+func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, pp ParticipantsProvider, tx transactor.Transactor) SessionManager {
 	cache := sessionCache{
 		sessions:         make(map[pomomo.TextChannelID]*models.Session),
 		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
@@ -65,6 +72,7 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 		cache:     &cache,
 		repo:      repo,
 		tx:        tx,
+		pp:        pp,
 		parentCtx: ctx,
 	}
 }
@@ -82,17 +90,17 @@ func (m *sessionManager) GuildSessionCnt(gid string) int {
 	return m.cache.guildSessionCnts[gid]
 }
 
+func (m *sessionManager) OnSessionRestore(f func(context.Context, models.Session)) {
+	m.onRestore = f
+}
+
 func (m *sessionManager) OnSessionCleanup(f func(context.Context, models.Session)) {
 	m.onCleanup = f
 }
 
-func (m *sessionManager) OnSessionNextInterval(f func(context.Context, models.Session)) {
-	m.onNextInterval = f
-}
-
-func (m *sessionManager) RestoreSessions() error {
+func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 	var toRestore []*models.Session
-	err := m.tx.WithinTransaction(m.parentCtx, func(ctx context.Context) error {
+	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		pendingSessionRecords, err := m.repo.GetSessionsByStatus(ctx, pomomo.SessionRunning, pomomo.SessionPaused)
 		if err != nil {
 			return err
@@ -129,6 +137,7 @@ func (m *sessionManager) RestoreSessions() error {
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		session := *toRestore[i]
+		go m.onRestore(ctx, session)
 		m.startUpdateLoop(sessionCtx, session.Record.TextCID)
 	}
 	log.Info("restored pending sessions", "count", len(toRestore))
@@ -139,7 +148,7 @@ func (m *sessionManager) HasSession(textCID string) bool {
 	return m.cache.Has(pomomo.TextChannelID(textCID))
 }
 
-func (m *sessionManager) OnSessionUpdate(handler func(context.Context, models.Session)) {
+func (m *sessionManager) OnSessionUpdate(handler func(ctx context.Context, before, curr models.Session)) {
 	m.onUpdate = handler
 }
 
@@ -156,18 +165,18 @@ func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) e
 
 func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextChannelID) {
 	m.wg.Go(func() {
-		var updateMu, nextIntervalMu sync.Mutex
+		var updateMu sync.Mutex
 		ticker := time.NewTicker(updateTickRate)
 		for {
 			func() {
 				s, unlock := m.cache.Get(cid)
 				defer unlock()
 				if s == nil {
-					log.Info("ending update loop - session not found", "textCID", cid)
+					log.Error("UNEXPECTED - ending update loop - session not found", "textCID", cid)
 					return
 				}
 
-				prevStatus := s.Record.CurrentInterval
+				before := *s
 				if err := m.updateSession(ctx, s); err != nil {
 					log.Error("failed to update session interval in timer", "sessionID", s.ID, "err", err)
 					return
@@ -178,16 +187,7 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextCha
 					go func() {
 						if updateMu.TryLock() {
 							defer updateMu.Unlock()
-							m.onUpdate(ctx, *s)
-						}
-					}()
-				}
-
-				if prevStatus != s.Record.CurrentInterval && m.onNextInterval != nil {
-					go func() {
-						if nextIntervalMu.TryLock() {
-							defer nextIntervalMu.Unlock()
-							m.onNextInterval(ctx, *s)
+							m.onUpdate(ctx, before, *s)
 						}
 					}()
 				}
@@ -231,7 +231,6 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 			return fmt.Errorf("failed to insert session settings: %w", err)
 		}
 
-		// Update session with ID
 		session.ID = inserted.ID
 		return nil
 	})
@@ -239,8 +238,23 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 	if err != nil {
 		return models.Session{}, fmt.Errorf("failed to start session: %w", err)
 	}
-
 	sessionCtxs := m.cache.Add(m.parentCtx, &session)
+
+	// user that starts session is automatically joined as a participant
+	unlock := m.pp.AcquireVoiceChannelLock(session.Record.VoiceCID)
+	defer unlock()
+	_, err = m.pp.Insert(ctx, pomomo.SessionParticipantRecord{
+		SessionID:  session.ID,
+		GuildID:    session.Record.GuildID,
+		VoiceCID:   session.Record.VoiceCID,
+		UserID:     req.user.id,
+		IsMuted:    req.user.mute,
+		IsDeafened: req.user.deaf,
+	})
+	if err != nil {
+		log.Error("failed to insert original participant", "err", err, "uid", req.user.id, "sid", session.ID)
+	}
+
 	m.startUpdateLoop(sessionCtxs[0], session.Record.TextCID)
 	return session, nil
 }
@@ -252,7 +266,11 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 	}
 	defer unlock()
 
+	before := *s
 	s.GoNextInterval(false)
+	// TODO GoNextInterval codesmell
+	s.Record.IntervalStartedAt = time.Now()
+	s.Stats.Skips += 1
 
 	// Update database with new interval state
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
@@ -263,16 +281,23 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 		return models.Session{}, fmt.Errorf("failed to skip interval: %w", err)
 	}
 
-	return *s, nil
+	curr := *s
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, before, curr)
+	}
+	return curr, nil
 }
 
 func (m *sessionManager) endSession(ctx context.Context, s models.Session) (models.Session, error) {
-	// Create a new record with ended status for database update
 	s.Record.Status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		_, err := m.repo.UpdateSession(ctx, s.ID, s.Record)
 		if err != nil {
 			return fmt.Errorf("failed to update session status: %w", err)
+		}
+
+		if _, err := m.repo.DeleteSettings(ctx, s.ID); err != nil {
+			return fmt.Errorf("failed to delete session settings: %w", err)
 		}
 		return nil
 	})
@@ -347,7 +372,7 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 func (c *sessionCache) Remove(cid pomomo.TextChannelID) {
 	s, _ := c.Get(cid)
 	if s == nil {
-		log.Debug("session not found", "textCID", cid)
+		log.Debug("session not found in cache", "textCID", cid)
 		return
 	}
 

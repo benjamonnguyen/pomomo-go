@@ -5,71 +5,102 @@ import (
 	"sync"
 
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/bwmarrin/discordgo"
+	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/charmbracelet/log"
 )
 
 type Autoshusher interface {
-	// Shush sets voice state for session participants in target text channel and returns participants' user IDs.
+	// Shush sets voice state for session participants in target voice channel.
 	// Shush preserves existing mute or deafen voice state.
-	Shush(bool, pomomo.TextChannelID) ([]string, error)
+	Shush(context.Context, models.Session)
 
-	// AddParticipant stores user's current voice state before adding to session
-	// @implement set StartedIntervalAt
-	AddParticipant(uid string, cid pomomo.TextChannelID) error
+	// Close restores voice state of participants
+	Close()
+}
 
-	// RemoveParticipant restores user's original voice state before removing from session
-	RemoveParticipant(uid string, cid pomomo.TextChannelID) error
-
-	// Restore adds active participants from DB
-	// @implement GetAllParticipants and call AddParticipant() to repopulate cache
-	Restore() error
-
-	// Close restores voice state of active participants
-	Close() error
+type VoiceStateSvc interface {
+	UpdateVoiceState(gid, uid string, mute, deaf bool) error
+	GetVoiceState(gid, uid string) (pomomo.VoiceState, error)
 }
 
 type autoshusher struct {
-	cl        *discordgo.Session
-	cache     *participantsCache
-	repo      pomomo.SessionRepo
-	parentCtx context.Context
+	participantsProvider ParticipantsProvider
+	vs                   VoiceStateSvc
+	l                    log.Logger
 }
 
-// @implement add sessionRepo
-func NewAutoshusher(cl *discordgo.Session) Autoshusher {
-	if !cl.State.TrackVoice {
-		panic("expected cl.State.TrackVoice == true")
-	}
-	cl.AddHandler(handleVoiceChannelLeave) // TODO maybe extract out to main; maybe don't need client in here at all
-	return autoshusher{
-		cl: cl,
+func NewAutoshusher(
+	p ParticipantsProvider,
+	vs VoiceStateSvc,
+	l log.Logger,
+) Autoshusher {
+	return &autoshusher{
+		participantsProvider: p,
+		vs:                   vs,
+		l:                    l,
 	}
 }
 
-func (o *autoshusher) handleVoiceChannelLeave(s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
-	if u.BeforeUpdate == nil {
-		// don't need to handle the case on join since participation is removed on leave
+func (o *autoshusher) Shush(ctx context.Context, s models.Session) {
+	unlock := o.participantsProvider.AcquireVoiceChannelLock(s.Record.VoiceCID)
+	defer unlock()
+
+	participants := o.participantsProvider.GetAll(s.Record.VoiceCID)
+	if len(participants) == 0 {
 		return
 	}
-	if u.ChannelID == u.BeforeUpdate.ChannelID {
-		// channel not left
-		return
+
+	var wg sync.WaitGroup
+	if s.Record.CurrentInterval == pomomo.PomodoroInterval {
+		for _, p := range participants {
+			wg.Go(func() {
+				// update voice state in case it's been changed during a break
+				currVs, err := o.vs.GetVoiceState(p.Record.GuildID, p.Record.UserID)
+				if err != nil {
+					o.l.Error("failed GetVoiceState", "err", err, "sid", p.Record.SessionID, "uid", p.Record.UserID)
+				} else {
+					if currVs.Mute != p.Record.IsMuted || currVs.Deaf != p.Record.IsDeafened {
+						updated, err := o.participantsProvider.UpdateVoiceState(ctx, p.Record.UserID, p.Record.VoiceCID, currVs)
+						if err != nil {
+							o.l.Error("failed UpdateVoiceState in sync", "err", err, "sid", p.Record.SessionID, "uid", p.Record.UserID)
+						}
+						p = updated
+					}
+				}
+
+				// shush
+				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, true, p.Record.IsDeafened || !s.Record.NoDeafen); err != nil {
+					o.l.Error("failed UpdateVoiceState", "gid", p.Record.GuildID, "uid", p.Record.UserID, "sid", p.Record.SessionID, "err", err)
+				}
+			})
+		}
+	} else {
+		// restore voice state
+		for _, p := range participants {
+			wg.Go(func() {
+				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+					o.l.Error("failed UpdateVoiceState", p.Record.GuildID, "uid", p.Record.UserID, "sid", p.Record.SessionID, "err", err)
+				}
+			})
+		}
 	}
-	p := o.cache.Get(u.BeforeUpdate.ChannelID, u.UserID)
-	if p == (pomomo.SessionParticipantRecord) {
-		return
-	}
-	if err := o.repo.DeleteParticipant(o.parentCtx, p.ID); err != nil {
-		log.Error("failed deleting participant on leave", "err", err, "voiceCID", u.ChannelID, "uid", u.UserID)
-	}
+	wg.Wait()
 }
 
-type participantsCache struct {
-	store sync.Map // map[pomomo.VoiceChannelID][]pomomo.SessionParticipantRecord
+func (o *autoshusher) Close() {
+	var wg sync.WaitGroup
+	cids := o.participantsProvider.GetVoiceChannelIDs()
+	for _, cid := range cids {
+		wg.Go(func() {
+			// permanently acquire locks
+			_ = o.participantsProvider.AcquireVoiceChannelLock(cid)
+			participants := o.participantsProvider.GetAll(cid)
+			for _, p := range participants {
+				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+					o.l.Error("failed to restore original voice state", "err", err, "gid", p.Record.GuildID, "sid", p.Record.SessionID, "uid", p.Record.UserID)
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
-
-// @implement func (c *participantsCache) Add(SessionParticipant) error
-// @implement func (c *participantsCache) Remove(cid, userID string) (SessionParticipant, error)
-// @implement func (c *participantsCache) Get(cid, userID string) SessionParticipant
-// @implement func (c *participantsCache) GetAll(cid string) []SessionParticipant

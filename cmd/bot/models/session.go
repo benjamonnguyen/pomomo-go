@@ -8,10 +8,9 @@ import (
 )
 
 type SessionParticipant struct {
-	ID                  pomomo.SessionParticipantID
-	UserID              string
-	IsMuted, IsDeafened bool
-	StartedIntervalAt   time.Time
+	ID                pomomo.SessionParticipantID
+	Record            pomomo.SessionParticipantRecord
+	StartedIntervalAt time.Time
 }
 
 type SessionSettings struct {
@@ -21,6 +20,7 @@ type SessionSettings struct {
 
 type SessionStats struct {
 	CompletedPomodoros int
+	Skips              int
 }
 
 type Session struct {
@@ -83,6 +83,7 @@ func (s Session) CurrentDuration() time.Duration {
 }
 
 func (s *Session) GoNextInterval(shouldUpdateStats bool) {
+	// TODO could be external
 	if shouldUpdateStats {
 		if s.Record.CurrentInterval == pomomo.PomodoroInterval {
 			s.Stats.CompletedPomodoros++

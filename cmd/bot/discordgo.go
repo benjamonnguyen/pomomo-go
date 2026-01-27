@@ -249,6 +249,7 @@ func timerBar(s models.Session) string {
 }
 
 func getStartMessage() discordgo.MessageComponent {
+	// TODO startmessage list from config
 	return TextDisplay("It's productivity o'clock!")
 }
 

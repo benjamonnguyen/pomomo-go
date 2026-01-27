@@ -14,29 +14,29 @@ const (
 	defaultErrorMsg = "Looks like something went wrong. Try again in a bit or reach out to support."
 )
 
-type CommandHandler interface {
-	StartSession(s *discordgo.Session, m *discordgo.InteractionCreate)
-	SkipInterval(s *discordgo.Session, m *discordgo.InteractionCreate)
-	EndSession(s *discordgo.Session, m *discordgo.InteractionCreate)
-	TogglePause(s *discordgo.Session, m *discordgo.InteractionCreate)
-	JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate)
-}
+func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsUpdater VoiceStateSvc, pp ParticipantsProvider, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
+	if u.BeforeUpdate == nil {
+		// don't need to handle joins since participation is removed on leave
+		return
+	}
+	if u.ChannelID == u.BeforeUpdate.ChannelID {
+		return
+	}
+	cid := pomomo.VoiceChannelID(u.ChannelID)
+	unlock := pp.AcquireVoiceChannelLock(cid)
+	defer unlock()
 
-type commandHandler struct {
-	parentCtx        context.Context
-	sessionManager   SessionManager
-	discordMessenger DiscordMessenger
-}
-
-func NewCommandHandler(parentCtx context.Context, sm SessionManager, dm DiscordMessenger) CommandHandler {
-	return &commandHandler{
-		parentCtx:        parentCtx,
-		sessionManager:   sm,
-		discordMessenger: dm,
+	if p := pp.Get(u.UserID, cid); p != nil {
+		if err := pp.Delete(ctx, p.ID); err != nil {
+			log.Error("failed participant delete on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
+		}
+		if err := vsUpdater.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
+		}
 	}
 }
 
-func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
+func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsProvider, s *discordgo.Session, m *discordgo.InteractionCreate) {
 	if m.Type != discordgo.InteractionApplicationCommand {
 		return
 	}
@@ -72,15 +72,15 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	}
 
 	// TODO multisession
-	if h.sessionManager.GuildSessionCnt(m.GuildID) > 0 {
-		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo is limited to one session per server for now.")); err != nil {
+	if sessionManager.GuildSessionCnt(m.GuildID) > 0 {
+		if _, err := dm.Respond(m.Interaction, false, TextDisplay("Pomomo is limited to one session per server for now.")); err != nil {
 			log.Error(err)
 		}
 		return
 	}
 
-	if h.sessionManager.HasSession(m.ChannelID) {
-		if _, err := h.discordMessenger.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
+	if sessionManager.HasSession(m.ChannelID) {
+		if _, err := dm.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
 			log.Error(err)
 		}
 		return
@@ -90,14 +90,14 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
 	if err != nil {
 		log.Debug("failed to get voice state", "userID", m.Member.User.ID, "guildID", m.GuildID, "err", err)
-		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
+		_, err = dm.Respond(m.Interaction, false, TextDisplay("Pomomo couldn't find your voice channel. Please join a voice channel with permissions and try again."))
 		if err != nil {
 			log.Error(err)
 		}
 		return
 	}
-	if h.sessionManager.HasVoiceSession(vs.ChannelID) {
-		_, err = h.discordMessenger.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
+	if sessionManager.HasVoiceSession(vs.ChannelID) {
+		_, err = dm.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
 		if err != nil {
 			log.Error(err)
 		}
@@ -106,22 +106,31 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 
 	session := models.NewSession("", m.GuildID, m.ChannelID, vs.ChannelID, "", settings)
 	session.GoNextInterval(false) // initialize fields for display - "real" session is created by sessionManager
-	msg, err := h.discordMessenger.Respond(m.Interaction, true, SessionMessageComponents(session)...)
+	msg, err := dm.Respond(m.Interaction, true, SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
-	session, err = h.sessionManager.StartSession(h.parentCtx, startSessionRequest{
+	session, err = sessionManager.StartSession(ctx, startSessionRequest{
 		guildID:   m.GuildID,
 		textCID:   m.ChannelID,
 		voiceCID:  vs.ChannelID,
 		messageID: msg.ID,
 		settings:  settings,
+		user: struct {
+			id   string
+			mute bool
+			deaf bool
+		}{
+			id:   m.Member.User.ID,
+			mute: m.Member.Mute,
+			deaf: m.Member.Deaf,
+		},
 	})
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := h.discordMessenger.EditResponse(m.Interaction, TextDisplay("Failed to start session.")); err != nil {
+		if _, err := dm.EditResponse(m.Interaction, TextDisplay("Failed to start session.")); err != nil {
 			log.Error(err)
 		}
 		return
@@ -131,14 +140,10 @@ func (h *commandHandler) StartSession(s *discordgo.Session, m *discordgo.Interac
 	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
 		log.Error("failed to pin message", "err", err)
 	}
-
 	// TODO SessionManager goroutine to update stats with lesser frequency
-
-	// TODO impl Resume/Pause
-	// TODO impl Stop
 }
 
-func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.InteractionCreate) {
+func SkipInterval(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) {
 	if m.Type != discordgo.InteractionMessageComponent {
 		return
 	}
@@ -152,13 +157,13 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 		return
 	}
 
-	followup, err := h.discordMessenger.DeferMessageUpdate(m.Interaction)
+	followup, err := dm.DeferMessageUpdate(m.Interaction)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 
-	session, err := h.sessionManager.SkipInterval(h.parentCtx, id.TextCID)
+	session, err := sessionManager.SkipInterval(ctx, id.TextCID)
 	if err != nil {
 		log.Error("failed to skip interval", "err", err)
 		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
@@ -176,7 +181,7 @@ func (h *commandHandler) SkipInterval(s *discordgo.Session, m *discordgo.Interac
 	}
 }
 
-func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
+func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo.Session, m *discordgo.InteractionCreate) {
 	if m.Type != discordgo.InteractionMessageComponent {
 		return
 	}
@@ -190,39 +195,21 @@ func (h *commandHandler) EndSession(s *discordgo.Session, m *discordgo.Interacti
 		return
 	}
 
-	followup, err := h.discordMessenger.DeferMessageUpdate(m.Interaction)
-	if err != nil {
-		log.Error(err)
+	if err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	}); err != nil {
+		log.Error("failed EndSession ack", "err", err)
 		return
 	}
 
-	session, err := h.sessionManager.EndSession(h.parentCtx, id.TextCID)
+	session, err := sessionManager.EndSession(ctx, id.TextCID)
 	if err != nil {
-		log.Error("failed to end session", "err", err)
-		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
-		if _, err := followup(components...); err != nil {
-			log.Error(err)
-		}
+		log.Error("failed EndSession", "sid", session.ID, "gid", session.Record.GuildID, "err", err)
 		return
 	}
 	log.Debug("ended session", "id", session.ID)
-
-	_, err = followup(SessionMessageComponents(session)...)
-	if err != nil {
-		log.Error(err)
-		return
-	}
-
-	// Unpin the session message
-	if err := s.ChannelMessageUnpin(string(id.TextCID), m.Message.ID); err != nil {
-		log.Error("failed to unpin message", "customID", id.ToCustomID(), "message", m.Message.ID, "err", err)
-	}
 }
 
-func (h *commandHandler) TogglePause(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	panic("not implemented")
-}
-
-func (h *commandHandler) JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
+func JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
 	panic("not implemented")
 }

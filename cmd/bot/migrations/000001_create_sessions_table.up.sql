@@ -6,6 +6,7 @@ CREATE TABLE sessions (
     interval_started_at INTEGER NOT NULL,
     current_interval INTEGER NOT NULL,
     time_remaining_at_start INTEGER NOT NULL,
+    no_deafen BOOL NOT NULL,
     status INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
