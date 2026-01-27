@@ -6,6 +6,8 @@ CREATE TABLE session_settings (
     intervals INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    FOREIGN KEY(session_id) REFERENCES sessions(id)
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    UNIQUE(session_id)
 );
 
+CREATE INDEX session_id_idx ON session_settings (session_id);
