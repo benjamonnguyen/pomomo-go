@@ -10,7 +10,7 @@ import (
 type Session struct {
 	ID       string
 	Settings SessionSettings
-	Stats    SessionStats
+	Stats    SessionStats // TODO maybe extract stats, handle updates in an update hook
 	Record   pomomo.SessionRecord
 }
 

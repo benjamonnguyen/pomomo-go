@@ -58,7 +58,7 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
 		cancelFuncs:      make(map[pomomo.TextChannelID]func()),
 		guildSessionCnts: make(map[string]int),
-		voiceConns:       make(map[pomomo.VoiceChannelID]struct{}),
+		voiceChannels:    make(map[pomomo.VoiceChannelID]struct{}),
 	}
 
 	return &sessionManager{
@@ -72,7 +72,7 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, tx transact
 func (m *sessionManager) HasVoiceSession(voiceCID string) bool {
 	m.cache.cacheMu.RLock()
 	defer m.cache.cacheMu.RUnlock()
-	_, exists := m.cache.voiceConns[pomomo.VoiceChannelID(voiceCID)]
+	_, exists := m.cache.voiceChannels[pomomo.VoiceChannelID(voiceCID)]
 	return exists
 }
 
@@ -107,16 +107,10 @@ func (m *sessionManager) RestoreSessions() error {
 			if session.TimeRemaining() < (-1 * time.Hour) {
 				// has been stale for more than an hour
 				go func() {
-					log.Info("ending stale session", "sessionID", session.ID)
-					_, err := m.repo.DeleteSession(m.parentCtx, session.ID)
-					if err != nil {
-						log.Error(err)
-						return
+					if _, err := m.endSession(m.parentCtx, session); err != nil {
+						log.Error("failed ending stale session", "sessionID", session.ID, "err", err)
 					}
-					if m.onCleanup != nil {
-						session.Record.Status = pomomo.SessionEnded
-						m.onCleanup(m.parentCtx, session)
-					}
+					log.Info("ended stale session", "sessionID", session.ID)
 				}()
 				continue
 			}
@@ -272,17 +266,11 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 	return *s, nil
 }
 
-func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error) {
-	s, unlock := m.cache.Get(cid)
-	if s == nil {
-		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
-	}
-
-	sessionCopy := *s
+func (m *sessionManager) endSession(ctx context.Context, s models.Session) (models.Session, error) {
 	// Create a new record with ended status for database update
-	sessionCopy.Record.Status = pomomo.SessionEnded
+	s.Record.Status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		_, err := m.repo.UpdateSession(ctx, s.ID, sessionCopy.Record)
+		_, err := m.repo.UpdateSession(ctx, s.ID, s.Record)
 		if err != nil {
 			return fmt.Errorf("failed to update session status: %w", err)
 		}
@@ -293,13 +281,26 @@ func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelI
 		}
 		return nil
 	})
+	if m.onCleanup != nil {
+		go m.onCleanup(ctx, s)
+	}
+	return s, err
+}
+
+func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error) {
+	s, unlock := m.cache.Get(cid)
+	if s == nil {
+		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
+	}
+
+	session, err := m.endSession(ctx, *s)
 	unlock()
 	if err != nil {
 		return models.Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
 
 	m.cache.Remove(cid)
-	return sessionCopy, nil
+	return session, nil
 }
 
 func (m *sessionManager) Shutdown() error {
@@ -320,7 +321,7 @@ type sessionCache struct {
 	sessions         map[pomomo.TextChannelID]*models.Session
 	locks            map[pomomo.TextChannelID]*sync.Mutex
 	cancelFuncs      map[pomomo.TextChannelID]func()
-	voiceConns       map[pomomo.VoiceChannelID]struct{}
+	voiceChannels    map[pomomo.VoiceChannelID]struct{}
 	guildSessionCnts map[string]int
 }
 
@@ -341,7 +342,7 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 		sessionCtx, cancel := context.WithCancel(ctx)
 		c.cancelFuncs[key] = cancel
 		sessionCtxs = append(sessionCtxs, sessionCtx)
-		c.voiceConns[s.Record.VoiceCID] = struct{}{}
+		c.voiceChannels[s.Record.VoiceCID] = struct{}{}
 		c.guildSessionCnts[s.Record.GuildID] += 1
 	}
 
@@ -362,7 +363,7 @@ func (c *sessionCache) Remove(cid pomomo.TextChannelID) {
 	delete(c.cancelFuncs, cid)
 	delete(c.sessions, cid)
 	delete(c.locks, cid)
-	delete(c.voiceConns, s.Record.VoiceCID)
+	delete(c.voiceChannels, s.Record.VoiceCID)
 	c.guildSessionCnts[s.Record.GuildID] -= 1
 }
 

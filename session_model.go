@@ -58,6 +58,17 @@ type ExistingSessionRecord struct {
 	SessionRecord
 }
 
+type SessionParticipantRecord struct {
+	UserID, SessionID   string
+	VoiceCID            VoiceChannelID
+	IsMuted, IsDeafened string
+}
+
+type ExistingSessionParticipantRecord struct {
+	DBRow
+	SessionParticipantRecord
+}
+
 type SessionSettingsRecord struct {
 	SessionID string
 
