@@ -110,6 +110,7 @@ func (s *Session) GoNextInterval(shouldUpdateStats bool) {
 		// may need multiple calls to catch up
 		s.Record.IntervalStartedAt = s.Record.IntervalStartedAt.Add(s.Record.TimeRemainingAtStart)
 	} else {
+		// Session is paused or hasn't started; start now
 		s.Record.IntervalStartedAt = time.Now()
 	}
 	s.Record.TimeRemainingAtStart = s.CurrentDuration()

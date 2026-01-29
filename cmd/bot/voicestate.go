@@ -9,39 +9,42 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-type Autoshusher interface {
-	// Shush sets voice state for session participants in target voice channel.
-	// Shush preserves existing mute or deafen voice state.
-	Shush(context.Context, models.Session)
+type VoiceStateManager interface {
+	// AutoShush sets voice state for session participants in target voice channel.
+	// AutoShush preserves existing mute or deafen voice state.
+	AutoShush(context.Context, models.Session)
 
-	// Close restores voice state of participants
+	// RestoreParticipants restores voice state of session participants
+	RestoreParticipants(pomomo.VoiceChannelID)
+
+	// Close restores voice state of participants across all sessions
 	Close()
 }
 
-type VoiceStateSvc interface {
+type vsSvc interface {
 	UpdateVoiceState(gid, uid string, mute, deaf bool) error
 	GetVoiceState(gid, uid string) (pomomo.VoiceState, error)
 }
 
-type autoshusher struct {
+type voiceStateMgr struct {
 	participantsProvider ParticipantsProvider
-	vs                   VoiceStateSvc
+	vs                   vsSvc
 	l                    log.Logger
 }
 
-func NewAutoshusher(
+func NewVoiceStateManager(
 	p ParticipantsProvider,
-	vs VoiceStateSvc,
+	vs vsSvc,
 	l log.Logger,
-) Autoshusher {
-	return &autoshusher{
+) VoiceStateManager {
+	return &voiceStateMgr{
 		participantsProvider: p,
 		vs:                   vs,
 		l:                    l,
 	}
 }
 
-func (o *autoshusher) Shush(ctx context.Context, s models.Session) {
+func (o *voiceStateMgr) AutoShush(ctx context.Context, s models.Session) {
 	unlock := o.participantsProvider.AcquireVoiceChannelLock(s.Record.VoiceCID)
 	defer unlock()
 
@@ -87,19 +90,26 @@ func (o *autoshusher) Shush(ctx context.Context, s models.Session) {
 	wg.Wait()
 }
 
-func (o *autoshusher) Close() {
+func (o *voiceStateMgr) RestoreParticipants(cid pomomo.VoiceChannelID) {
+	unlock := o.participantsProvider.AcquireVoiceChannelLock(cid)
+	defer unlock()
+	var wg sync.WaitGroup
+	for _, p := range o.participantsProvider.GetAll(cid) {
+		wg.Go(func() {
+			if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+				o.l.Error("failed to restore original voice state", "err", err, "sid", p.Record.SessionID, "uid", p.Record.UserID)
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func (o *voiceStateMgr) Close() {
 	var wg sync.WaitGroup
 	cids := o.participantsProvider.GetVoiceChannelIDs()
 	for _, cid := range cids {
 		wg.Go(func() {
-			// permanently acquire locks
-			_ = o.participantsProvider.AcquireVoiceChannelLock(cid)
-			participants := o.participantsProvider.GetAll(cid)
-			for _, p := range participants {
-				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
-					o.l.Error("failed to restore original voice state", "err", err, "gid", p.Record.GuildID, "sid", p.Record.SessionID, "uid", p.Record.UserID)
-				}
-			}
+			o.RestoreParticipants(cid)
 		})
 	}
 	wg.Wait()

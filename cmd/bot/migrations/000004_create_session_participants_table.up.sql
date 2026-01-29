@@ -13,3 +13,4 @@ CREATE TABLE session_participants (
 );
 
 CREATE INDEX participants_session_id_idx ON session_participants (session_id);
+CREATE INDEX participants_user_id_idx ON session_participants (user_id);

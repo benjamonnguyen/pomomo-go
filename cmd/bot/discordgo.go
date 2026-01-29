@@ -175,25 +175,34 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 		}
 	}
 	// action row
-	skipButton := discordgo.Button{
-		Label: "Skip",
-		Style: discordgo.PrimaryButton,
-		CustomID: InteractionID{
-			Type:    "skip",
-			TextCID: s.Record.TextCID,
-		}.ToCustomID(),
-	}
-	endButton := discordgo.Button{
-		Label: "End",
-		Style: discordgo.DangerButton,
-		CustomID: InteractionID{
-			Type:    "end",
-			TextCID: s.Record.TextCID,
-		}.ToCustomID(),
-	}
 
 	actionRow := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{skipButton, endButton},
+		Components: []discordgo.MessageComponent{
+			discordgo.Button{
+				Label: "Join",
+				Style: discordgo.PrimaryButton,
+				CustomID: InteractionID{
+					Type:    "join",
+					TextCID: s.Record.TextCID,
+				}.ToCustomID(),
+			},
+			discordgo.Button{
+				Label: "End",
+				Style: discordgo.DangerButton,
+				CustomID: InteractionID{
+					Type:    "end",
+					TextCID: s.Record.TextCID,
+				}.ToCustomID(),
+			},
+			discordgo.Button{
+				Label: "Skip",
+				Style: discordgo.SecondaryButton,
+				CustomID: InteractionID{
+					Type:    "skip",
+					TextCID: s.Record.TextCID,
+				}.ToCustomID(),
+			},
+		},
 	}
 
 	// settings

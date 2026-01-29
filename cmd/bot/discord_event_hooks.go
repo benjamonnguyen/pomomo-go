@@ -14,7 +14,7 @@ const (
 	defaultErrorMsg = "Looks like something went wrong. Try again in a bit or reach out to support."
 )
 
-func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsUpdater VoiceStateSvc, pp ParticipantsProvider, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
+func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp ParticipantsProvider, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
 	if u.BeforeUpdate == nil {
 		// don't need to handle joins since participation is removed on leave
 		return
@@ -22,28 +22,29 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsUpdater VoiceSt
 	if u.ChannelID == u.BeforeUpdate.ChannelID {
 		return
 	}
-	cid := pomomo.VoiceChannelID(u.ChannelID)
+	cid := pomomo.VoiceChannelID(u.BeforeUpdate.ChannelID)
 	unlock := pp.AcquireVoiceChannelLock(cid)
 	defer unlock()
 
+	log.Debug("removing participant on voice channel leave", "uid", u.UserID, "cid", cid)
 	if p := pp.Get(u.UserID, cid); p != nil {
 		if err := pp.Delete(ctx, p.ID); err != nil {
 			log.Error("failed participant delete on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
 		}
-		if err := vsUpdater.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+		if err := vsSvc.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
 			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
 		}
 	}
 }
 
-func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsProvider, s *discordgo.Session, m *discordgo.InteractionCreate) {
+func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsProvider, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionApplicationCommand {
-		return
+		return false
 	}
 
 	data := m.ApplicationCommandData()
 	if data.Name != pomomo.StartCommand.Name {
-		return
+		return false
 	}
 
 	// Parse command options with defaults
@@ -76,14 +77,14 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 		if _, err := dm.Respond(m.Interaction, false, TextDisplay("Pomomo is limited to one session per server for now.")); err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 
 	if sessionManager.HasSession(m.ChannelID) {
 		if _, err := dm.Respond(m.Interaction, false, TextDisplay("This channel already has an active session.")); err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 
 	// get voice channel
@@ -94,14 +95,14 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 		if err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 	if sessionManager.HasVoiceSession(vs.ChannelID) {
 		_, err = dm.Respond(m.Interaction, false, TextDisplay("Your voice channel already has an active session. Please join another voice channel and try again."))
 		if err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 
 	session := models.NewSession("", m.GuildID, m.ChannelID, vs.ChannelID, "", settings)
@@ -109,7 +110,7 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 	msg, err := dm.Respond(m.Interaction, true, SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
-		return
+		return true
 	}
 
 	session, err = sessionManager.StartSession(ctx, startSessionRequest{
@@ -133,7 +134,7 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 		if _, err := dm.EditResponse(m.Interaction, TextDisplay("Failed to start session.")); err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 	log.Debug("started session", "id", session.ID)
 
@@ -141,26 +142,28 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 		log.Error("failed to pin message", "err", err)
 	}
 	// TODO SessionManager goroutine to update stats with lesser frequency
+
+	return true
 }
 
-func SkipInterval(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) {
+func SkipInterval(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionMessageComponent {
-		return
+		return false
 	}
 
 	data := m.MessageComponentData()
 	id, err := FromCustomID(data.CustomID)
 	if err != nil {
-		return
+		return false
 	}
 	if id.Type != "skip" {
-		return
+		return false
 	}
 
 	followup, err := dm.DeferMessageUpdate(m.Interaction)
 	if err != nil {
 		log.Error(err)
-		return
+		return true
 	}
 
 	session, err := sessionManager.SkipInterval(ctx, id.TextCID)
@@ -170,46 +173,150 @@ func SkipInterval(ctx context.Context, sessionManager SessionManager, dm Discord
 		if _, err := followup(components...); err != nil {
 			log.Error(err)
 		}
-		return
+		return true
 	}
 	log.Debug("skipped interval", "new", session.Record.CurrentInterval)
 
 	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
 		log.Error(err)
-		return
+		return true
 	}
+
+	return true
 }
 
-func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo.Session, m *discordgo.InteractionCreate) {
+func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionMessageComponent {
-		return
+		return false
 	}
 
 	data := m.MessageComponentData()
 	id, err := FromCustomID(data.CustomID)
 	if err != nil {
-		return
+		return false
 	}
 	if id.Type != "end" {
-		return
+		return false
 	}
 
 	if err := s.InteractionRespond(m.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	}); err != nil {
 		log.Error("failed EndSession ack", "err", err)
-		return
+		return true
 	}
 
 	session, err := sessionManager.EndSession(ctx, id.TextCID)
 	if err != nil {
 		log.Error("failed EndSession", "sid", session.ID, "gid", session.Record.GuildID, "err", err)
-		return
+		return true
 	}
 	log.Debug("ended session", "id", session.ID)
+	return true
 }
 
-func JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
-	panic("not implemented")
+func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr VoiceStateManager, pp ParticipantsProvider, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
+	if m.Type != discordgo.InteractionMessageComponent {
+		return false
+	}
+
+	data := m.MessageComponentData()
+	id, err := FromCustomID(data.CustomID)
+	if err != nil {
+		return false
+	}
+	if id.Type != "join" {
+		return false
+	}
+
+	followup, err := dm.DeferMessageUpdate(m.Interaction)
+	if err != nil {
+		log.Error(err)
+		return true
+	}
+
+	// Get the session
+	session, err := sessionManager.GetSession(id.TextCID)
+	if err != nil {
+		log.Error("failed to get session", "err", err)
+		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
+			log.Error(err)
+		}
+		return true
+	}
+
+	// Check if user is already a participant in another session
+	pID, err := pp.GetParticipantID(ctx, m.Member.User.ID)
+	if err != nil {
+		log.Error("failed to check existing participant", "err", err)
+		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
+		if _, err := followup(components...); err != nil {
+			log.Error(err)
+		}
+		return true
+	}
+	if pID != "" {
+		if err := pp.Delete(ctx, pID); err != nil {
+			log.Error("failed to delete existing participant", "err", err)
+			components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
+			if _, err := followup(components...); err != nil {
+				log.Error(err)
+			}
+			return true
+		}
+	}
+
+	// Get user's current voice state
+	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
+	if err != nil {
+		log.Error("failed to get voice state", "userID", m.Member.User.ID, "sid", session.ID, "err", err)
+		_, err = followup(TextDisplay("You need to be in a voice channel to join the session."))
+		if err != nil {
+			log.Error(err)
+		}
+		return true
+	}
+
+	// Move user to session's voice channel
+	if vs.ChannelID != string(session.Record.VoiceCID) {
+		voiceCIDStr := string(session.Record.VoiceCID)
+		err = s.GuildMemberMove(m.GuildID, m.Member.User.ID, &voiceCIDStr)
+		if err != nil {
+			log.Error("failed to move user to voice channel", "err", err, "voiceCID", session.Record.VoiceCID)
+			components := append(SessionMessageComponents(session), TextDisplay(m.Member.DisplayName()+" failed to join session."))
+			if _, err := followup(components...); err != nil {
+				log.Error(err)
+			}
+			return true
+		}
+	}
+
+	// Insert participant
+	_, err = pp.Insert(ctx, pomomo.SessionParticipantRecord{
+		SessionID:  session.ID,
+		GuildID:    session.Record.GuildID,
+		VoiceCID:   session.Record.VoiceCID,
+		UserID:     m.Member.User.ID,
+		IsMuted:    vs.Mute,
+		IsDeafened: vs.Deaf,
+	})
+	if err != nil {
+		log.Error("failed to insert participant", "err", err)
+		components := append(SessionMessageComponents(session), TextDisplay(m.Member.DisplayName()+" failed to join session."))
+		if _, err := followup(components...); err != nil {
+			log.Error(err)
+		}
+		return true
+	}
+
+	go vsMgr.AutoShush(ctx, session)
+
+	_, err = followup(SessionMessageComponents(session)...)
+	if err != nil {
+		log.Error(err)
+		return true
+	}
+	log.Debug("user joined session", "userID", m.Member.User.ID, "cid", session.Record.VoiceCID, "sessionID", session.ID)
+	return true
 }

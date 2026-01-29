@@ -27,6 +27,7 @@ type startSessionRequest struct {
 
 type SessionManager interface {
 	HasSession(textCID string) bool
+	GetSession(cid pomomo.TextChannelID) (models.Session, error)
 	StartSession(context.Context, startSessionRequest) (models.Session, error)
 	EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
@@ -39,8 +40,6 @@ type SessionManager interface {
 
 	// hooks
 	OnSessionUpdate(func(ctx context.Context, before, curr models.Session))
-	OnSessionRestore(func(context.Context, models.Session))
-	OnSessionCleanup(func(context.Context, models.Session))
 
 	//
 	Shutdown() error
@@ -54,9 +53,7 @@ type sessionManager struct {
 	parentCtx context.Context
 	pp        ParticipantsProvider
 
-	onRestore func(context.Context, models.Session)
-	onUpdate  func(ctx context.Context, before, curr models.Session)
-	onCleanup func(context.Context, models.Session)
+	onUpdate func(ctx context.Context, before, curr models.Session)
 }
 
 func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, pp ParticipantsProvider, tx transactor.Transactor) SessionManager {
@@ -90,14 +87,6 @@ func (m *sessionManager) GuildSessionCnt(gid string) int {
 	return m.cache.guildSessionCnts[gid]
 }
 
-func (m *sessionManager) OnSessionRestore(f func(context.Context, models.Session)) {
-	m.onRestore = f
-}
-
-func (m *sessionManager) OnSessionCleanup(f func(context.Context, models.Session)) {
-	m.onCleanup = f
-}
-
 func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 	var toRestore []*models.Session
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
@@ -114,12 +103,12 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 			session := models.SessionFromExistingRecords(r, existingSettings)
 			if session.TimeRemaining() < (-1 * time.Hour) {
 				// has been stale for more than an hour
-				go func() {
-					if _, err := m.endSession(m.parentCtx, session); err != nil {
-						log.Error("failed ending stale session", "sessionID", session.ID, "err", err)
-					}
-					log.Info("ended stale session", "sessionID", session.ID)
-				}()
+				_, err := m.endSession(m.parentCtx, session)
+				if err != nil {
+					log.Error("failed ending stale session", "sessionID", session.ID, "err", err)
+					continue
+				}
+				log.Info("ended stale session", "sessionID", session.ID)
 				continue
 			}
 			for session.TimeRemaining() <= 0 {
@@ -137,7 +126,9 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		session := *toRestore[i]
-		go m.onRestore(ctx, session)
+		if m.onUpdate != nil {
+			m.onUpdate(ctx, models.Session{}, session)
+		}
 		m.startUpdateLoop(sessionCtx, session.Record.TextCID)
 	}
 	log.Info("restored pending sessions", "count", len(toRestore))
@@ -146,6 +137,15 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 
 func (m *sessionManager) HasSession(textCID string) bool {
 	return m.cache.Has(pomomo.TextChannelID(textCID))
+}
+
+func (m *sessionManager) GetSession(cid pomomo.TextChannelID) (models.Session, error) {
+	s, unlock := m.cache.Get(cid)
+	if s == nil {
+		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
+	}
+	defer unlock()
+	return *s, nil
 }
 
 func (m *sessionManager) OnSessionUpdate(handler func(ctx context.Context, before, curr models.Session)) {
@@ -281,14 +281,14 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 		return models.Session{}, fmt.Errorf("failed to skip interval: %w", err)
 	}
 
-	curr := *s
 	if m.onUpdate != nil {
-		m.onUpdate(ctx, before, curr)
+		m.onUpdate(ctx, before, *s)
 	}
-	return curr, nil
+	return *s, nil
 }
 
 func (m *sessionManager) endSession(ctx context.Context, s models.Session) (models.Session, error) {
+	before := s
 	s.Record.Status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		_, err := m.repo.UpdateSession(ctx, s.ID, s.Record)
@@ -301,8 +301,8 @@ func (m *sessionManager) endSession(ctx context.Context, s models.Session) (mode
 		}
 		return nil
 	})
-	if m.onCleanup != nil {
-		go m.onCleanup(ctx, s)
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, before, s)
 	}
 	return s, err
 }
@@ -313,14 +313,14 @@ func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelI
 		return models.Session{}, fmt.Errorf("session not found for textCID: %v", cid)
 	}
 
-	session, err := m.endSession(ctx, *s)
+	ended, err := m.endSession(ctx, *s)
 	unlock()
 	if err != nil {
 		return models.Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
 
 	m.cache.Remove(cid)
-	return session, nil
+	return ended, nil
 }
 
 func (m *sessionManager) Shutdown() error {

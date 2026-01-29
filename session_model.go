@@ -94,6 +94,7 @@ type ExistingSessionSettingsRecord struct {
 }
 
 type SessionRepo interface {
+	// TODO reconsider SessionRepo being defined here
 	InsertSession(context.Context, SessionRecord) (ExistingSessionRecord, error)
 	UpdateSession(context.Context, SessionID, SessionRecord) (ExistingSessionRecord, error)
 	DeleteSession(context.Context, SessionID) (ExistingSessionRecord, error)
@@ -110,4 +111,5 @@ type SessionRepo interface {
 	UpdateParticipant(context.Context, SessionParticipantID, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
 	DeleteParticipant(context.Context, SessionParticipantID) (ExistingSessionParticipantRecord, error)
 	GetAllParticipants(context.Context) ([]ExistingSessionParticipantRecord, error)
+	GetParticipantByUserID(context.Context, string) (ExistingSessionParticipantRecord, error)
 }

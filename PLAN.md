@@ -16,6 +16,9 @@ minPermission set to user that starts session
 
 ## refactor session_manager: extract session_provider
 
+## bugs
+- message not being cleanedup
+
 ## testing
 - commands.go integration tests
 - update online docs, top.gg, support server url

@@ -381,6 +381,20 @@ func (r *sessionRepo) GetAllParticipants(ctx context.Context) ([]pomomo.Existing
 	return participants, nil
 }
 
+func (r *sessionRepo) GetParticipantByUserID(ctx context.Context, userID string) (pomomo.ExistingSessionParticipantRecord, error) {
+	if userID == "" {
+		return pomomo.ExistingSessionParticipantRecord{}, fmt.Errorf("provide userID")
+	}
+
+	db := r.dbGetter(ctx)
+	row := db.QueryRowContext(
+		ctx,
+		fmt.Sprintf("%s WHERE user_id=?", SelectAllParticipants), userID,
+	)
+
+	return extractParticipant(row)
+}
+
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity
 	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.NoDeafen, &e.CreatedAt, &e.UpdatedAt); err != nil {
