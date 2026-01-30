@@ -9,6 +9,7 @@ import (
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
+	"github.com/benjamonnguyen/pomomo-go/sqlite"
 	"github.com/charmbracelet/log"
 )
 
@@ -19,6 +20,7 @@ type ParticipantsProvider interface {
 	Get(string, pomomo.VoiceChannelID) *models.SessionParticipant
 	GetAll(pomomo.VoiceChannelID) []*models.SessionParticipant
 	GetVoiceChannelIDs() []pomomo.VoiceChannelID
+	GetParticipantID(context.Context, string) (pomomo.SessionParticipantID, error)
 
 	// AcquireVoiceChannelLock returns unlockFn that caller is responsible for calling
 	AcquireVoiceChannelLock(pomomo.VoiceChannelID) func()
@@ -51,6 +53,7 @@ type participantsCache struct {
 }
 
 func (c *participantsCache) add(p *models.SessionParticipant) error {
+	log.Debug("participantsCache add", "pid", p.ID)
 	if existing := c.get(p.Record.VoiceCID, p.Record.UserID); existing != nil {
 		return fmt.Errorf("cache already contains participant with userID %s", p.Record.UserID)
 	}
@@ -208,4 +211,15 @@ func (pp *participantsProvider) GetVoiceChannelIDs() []pomomo.VoiceChannelID {
 		res = append(res, cid)
 	}
 	return res
+}
+
+func (pp *participantsProvider) GetParticipantID(ctx context.Context, userID string) (pomomo.SessionParticipantID, error) {
+	p, err := pp.repo.GetParticipantByUserID(ctx, userID)
+	if err != nil {
+		if err == sqlite.ErrNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	return p.ID, nil
 }

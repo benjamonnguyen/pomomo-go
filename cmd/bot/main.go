@@ -96,7 +96,7 @@ func main() {
 		ShortBreakAudio: shortBreakSoundPath,
 		IdleAudio:       idleSoundPath,
 	})
-	autoshusher := NewAutoshusher(
+	vsMgr := NewVoiceStateManager(
 		participantsProvider,
 		discordAdapter,
 		*log.Default(),
@@ -104,10 +104,56 @@ func main() {
 
 	// session manager
 	sessionManager := NewSessionManager(topCtx, sessionRepo, participantsProvider, tx)
-	sessionManager.OnSessionRestore(func(ctx context.Context, s models.Session) {
-		autoshusher.Shush(ctx, s)
-	})
 	sessionManager.OnSessionUpdate(func(ctx context.Context, before, curr models.Session) {
+		// on restore
+		if before == (models.Session{}) {
+			vsMgr.AutoShush(ctx, before)
+			return
+		}
+
+		// on end
+		if curr.Record.Status == pomomo.SessionEnded {
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
+				if err != nil {
+					log.Error("failed to edit discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+				}
+				if err := cl.ChannelMessageUnpin(string(curr.Record.TextCID), curr.Record.MessageID); err != nil {
+					log.Error("failed to unpin discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+				}
+			})
+			wg.Go(func() {
+				vsMgr.RestoreParticipants(curr.Record.VoiceCID)
+				cnt := sessionManager.GuildSessionCnt(curr.Record.GuildID)
+				if cnt == 1 {
+					if conn := cl.VoiceConnections[string(curr.Record.GuildID)]; conn != nil {
+						if err := conn.Disconnect(); err != nil {
+							log.Error(err)
+						}
+					}
+				}
+				// delete participants
+				ps := participantsProvider.GetAll(curr.Record.VoiceCID)
+				for _, p := range ps {
+					_ = participantsProvider.Delete(ctx, p.ID)
+				}
+			})
+			wg.Wait()
+			return
+		}
+
+		// end empty session
+		if all := participantsProvider.GetAll(curr.Record.VoiceCID); len(all) == 0 {
+			_, err := sessionManager.EndSession(ctx, curr.Record.TextCID)
+			if err != nil {
+				log.Error("failed to end empty session", "sid", curr.ID, "err", err)
+				return
+			}
+			log.Debug("ended empty session", "sid", curr.ID)
+			return
+		}
+
 		// update timer bar
 		_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
 		if err != nil {
@@ -120,68 +166,35 @@ func main() {
 			skipped := curr.Stats.Skips > before.Stats.Skips
 			if curr.Record.CurrentInterval != pomomo.PomodoroInterval {
 				// unshush before playing
-				autoshusher.Shush(ctx, curr)
+				vsMgr.AutoShush(ctx, curr)
 				if !skipped {
 					if err := playIntervalAlert(ctx, curr, opusAudioLoader.Load, discordAdapter.SendOpusAudio); err != nil {
 						log.Error("failed to play interval alert", "guildID", curr.Record.GuildID, "channelID", curr.Record.VoiceCID, "err", err)
 					}
 				}
 			} else {
-				// shush
+				// shush after playing
 				if !skipped {
 					if err := playIntervalAlert(ctx, curr, opusAudioLoader.Load, discordAdapter.SendOpusAudio); err != nil {
 						log.Error("failed to play interval alert", "guildID", curr.Record.GuildID, "channelID", curr.Record.VoiceCID, "err", err)
 					}
-					autoshusher.Shush(ctx, curr)
 				}
+				vsMgr.AutoShush(ctx, curr)
 			}
 			// TODO persist participant stats
 		}
-	})
-	sessionManager.OnSessionCleanup(func(ctx context.Context, s models.Session) {
-		go func() {
-			_, err := dm.EditChannelMessage(s.Record.TextCID, s.Record.MessageID, SessionMessageComponents(s)...)
-			if err != nil {
-				log.Error("failed to edit discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
-			}
-			if err := cl.ChannelMessageUnpin(string(s.Record.TextCID), s.Record.MessageID); err != nil {
-				log.Error("failed to unpin discord channel message", "channelID", s.Record.VoiceCID, "messageID", s.Record.MessageID, "sessionID", s.ID, "err", err)
-			}
-		}()
-		go func() {
-			autoshusher.Shush(ctx, s) // unshush
-			if sessionManager.GuildSessionCnt(s.Record.GuildID) == 0 {
-				if conn := cl.VoiceConnections[string(s.Record.GuildID)]; conn != nil {
-					if err := conn.Disconnect(); err != nil {
-						log.Error(err)
-					}
-				}
-			}
-			// delete participants
-			ps := participantsProvider.GetAll(s.Record.VoiceCID)
-			for _, p := range ps {
-				_ = participantsProvider.Delete(ctx, p.ID)
-			}
-		}()
 	})
 	panicif(sessionManager.RestoreSessions(initTimeout))
 
 	// discord event hooks
 	cl.AddHandler(func(s *dg.Session, u *dg.VoiceStateUpdate) {
-		go RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, participantsProvider, s, u)
+		RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, participantsProvider, s, u)
 	})
 	cl.AddHandler(func(s *dg.Session, m *dg.InteractionCreate) {
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			StartSession(topCtx, sessionManager, dm, participantsProvider, s, m)
-		})
-		wg.Go(func() {
-			SkipInterval(topCtx, sessionManager, dm, s, m)
-		})
-		wg.Go(func() {
-			EndSession(topCtx, sessionManager, s, m) // messaging handled in OnSessionCleanup hook
-		})
-		wg.Wait()
+		_ = StartSession(topCtx, sessionManager, dm, participantsProvider, s, m) ||
+			SkipInterval(topCtx, sessionManager, dm, s, m) ||
+			EndSession(topCtx, sessionManager, s, m) || // messaging handled in OnSessionCleanup hook
+			JoinSession(topCtx, sessionManager, vsMgr, participantsProvider, dm, s, m)
 	})
 
 	// open connection
@@ -205,7 +218,7 @@ func main() {
 		if err := sessionManager.Shutdown(); err != nil {
 			log.Error(err)
 		}
-		autoshusher.Close()
+		vsMgr.Close()
 		if err := cl.Close(); err != nil {
 			log.Error(err)
 		}
