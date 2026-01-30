@@ -72,7 +72,9 @@ func (o *voiceStateMgr) AutoShush(ctx context.Context, s models.Session) {
 				}
 
 				// shush
-				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, true, p.Record.IsDeafened || !s.Record.NoDeafen); err != nil {
+				mute := p.Record.IsMuted || !s.Settings.NoMute
+				deafen := p.Record.IsDeafened || !s.Settings.NoDeafen
+				if err := o.vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, mute, deafen); err != nil {
 					o.l.Error("failed UpdateVoiceState", "gid", p.Record.GuildID, "uid", p.Record.UserID, "sid", p.Record.SessionID, "err", err)
 				}
 			})

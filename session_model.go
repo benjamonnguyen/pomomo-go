@@ -53,7 +53,6 @@ type SessionRecord struct {
 	TimeRemainingAtStart time.Duration
 	CurrentInterval      SessionInterval
 	Status               SessionStatus
-	NoDeafen             bool
 }
 
 type ExistingSessionRecord struct {
@@ -86,6 +85,8 @@ type SessionSettingsRecord struct {
 	ShortBreak time.Duration
 	LongBreak  time.Duration
 	Intervals  int
+	NoMute     bool
+	NoDeafen   bool
 }
 
 type ExistingSessionSettingsRecord struct {

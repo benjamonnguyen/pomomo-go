@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	SelectAllSessions     = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, no_deafen, created_at, updated_at FROM sessions"
-	SelectAllSettings     = "SELECT session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at FROM session_settings"
+	SelectAllSessions     = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at FROM sessions"
+	SelectAllSettings     = "SELECT session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, no_mute, no_deafen, created_at, updated_at FROM session_settings"
 	SelectAllParticipants = "SELECT id, user_id, session_id, guild_id, voice_channel_id, is_muted, is_deafened, created_at, updated_at FROM session_participants"
 	UpdateParticipant     = "UPDATE session_participants SET user_id = ?, session_id = ?, guild_id = ?, voice_channel_id = ?, is_muted = ?, is_deafened = ?, updated_at = ? WHERE id = ?"
 )
@@ -33,7 +33,6 @@ type sessionEntity struct {
 	TimeRemainingAtStartMS int64
 	CurrentInterval        uint8
 	Status                 uint8
-	NoDeafen               bool
 	CreatedAt              int64
 	UpdatedAt              int64
 }
@@ -44,6 +43,8 @@ type sessionSettingsEntity struct {
 	ShortBreakDuration int
 	LongBreakDuration  int
 	Intervals          int
+	NoMute             bool
+	NoDeafen           bool
 	CreatedAt          int64
 	UpdatedAt          int64
 }
@@ -93,11 +94,10 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
-		e.NoDeafen,
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, no_deafen, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -117,7 +117,7 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 	existing.UpdatedAt = time.Now()
 	e := mapToSessionEntity(existing)
 
-	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, no_deafen = ?, updated_at = ? WHERE id = ?"
+	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, updated_at = ? WHERE id = ?"
 	args := []any{
 		e.GuildID,
 		e.TextChannelID,
@@ -127,7 +127,6 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
-		e.NoDeafen,
 		e.UpdatedAt,
 		e.ID,
 	}
@@ -221,10 +220,12 @@ func (r *sessionRepo) InsertSettings(ctx context.Context, settings pomomo.Sessio
 		e.ShortBreakDuration,
 		e.LongBreakDuration,
 		e.Intervals,
+		e.NoMute,
+		e.NoDeafen,
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO session_settings (session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO session_settings (session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, no_mute, no_deafen, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session settings", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -397,7 +398,7 @@ func (r *sessionRepo) GetParticipantByUserID(ctx context.Context, userID string)
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity
-	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.NoDeafen, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionRecord{}, ErrNotFound
 		}
@@ -409,7 +410,7 @@ func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error
 
 func extractSessionSettings(s sqliteutil.Scannable) (pomomo.ExistingSessionSettingsRecord, error) {
 	var e sessionSettingsEntity
-	if err := s.Scan(&e.SessionID, &e.PomodoroDuration, &e.ShortBreakDuration, &e.LongBreakDuration, &e.Intervals, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.SessionID, &e.PomodoroDuration, &e.ShortBreakDuration, &e.LongBreakDuration, &e.Intervals, &e.NoMute, &e.NoDeafen, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionSettingsRecord{}, ErrNotFound
 		}
@@ -442,7 +443,6 @@ func mapToSessionEntity(session pomomo.ExistingSessionRecord) sessionEntity {
 		TimeRemainingAtStartMS: session.TimeRemainingAtStart.Milliseconds(),
 		CurrentInterval:        uint8(session.CurrentInterval),
 		Status:                 uint8(session.Status),
-		NoDeafen:               session.NoDeafen,
 		CreatedAt:              session.CreatedAt.Unix(),
 		UpdatedAt:              session.UpdatedAt.Unix(),
 	}
@@ -455,6 +455,8 @@ func mapToSessionSettingsEntity(settings pomomo.ExistingSessionSettingsRecord) s
 		ShortBreakDuration: int(settings.ShortBreak.Seconds()),
 		LongBreakDuration:  int(settings.LongBreak.Seconds()),
 		Intervals:          settings.Intervals,
+		NoMute:             settings.NoMute,
+		NoDeafen:           settings.NoDeafen,
 		CreatedAt:          settings.CreatedAt.Unix(),
 		UpdatedAt:          settings.UpdatedAt.Unix(),
 	}
@@ -476,7 +478,7 @@ func mapToExistingSessionRecord(e sessionEntity) pomomo.ExistingSessionRecord {
 			TimeRemainingAtStart: time.Duration(e.TimeRemainingAtStartMS) * time.Millisecond,
 			CurrentInterval:      pomomo.SessionInterval(e.CurrentInterval),
 			Status:               pomomo.SessionStatus(e.Status),
-			NoDeafen:             e.NoDeafen,
+			// NoDeafen moved to settings
 		},
 	}
 }
@@ -494,6 +496,8 @@ func mapToExistingSessionSettingsRecord(e sessionSettingsEntity) pomomo.Existing
 			ShortBreak: time.Duration(e.ShortBreakDuration) * time.Second,
 			LongBreak:  time.Duration(e.LongBreakDuration) * time.Second,
 			Intervals:  e.Intervals,
+			NoMute:     e.NoMute,
+			NoDeafen:   e.NoDeafen,
 		},
 	}
 }

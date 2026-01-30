@@ -1,11 +1,5 @@
 # MVP
 ## autoshush
-btn
-func (h *commandHandler) JoinSession(s *discordgo.Session, m *discordgo.InteractionCreate) {
-  // move user into voice channel
-  // noop if already in channel - should leave channel to leave session
-	panic("not implemented")
-}
 noDeafen start option
 
 ## msg
@@ -17,7 +11,6 @@ minPermission set to user that starts session
 ## refactor session_manager: extract session_provider
 
 ## bugs
-- message not being cleanedup
 
 ## testing
 - commands.go integration tests

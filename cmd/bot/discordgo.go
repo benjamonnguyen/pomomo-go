@@ -15,7 +15,7 @@ type DiscordMessenger interface {
 	EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error)
 	Respond(it *discordgo.Interaction, wait bool, components ...discordgo.MessageComponent) (*discordgo.Message, error)
 	EditResponse(it *discordgo.Interaction, components ...discordgo.MessageComponent) (*discordgo.Message, error)
-	DeferMessageCreate(it *discordgo.Interaction) (followup, error)
+	DeferMessageCreate(it *discordgo.Interaction, ephemeral bool) (followup, error)
 	DeferMessageUpdate(it *discordgo.Interaction) (followup, error)
 }
 
@@ -63,9 +63,16 @@ func (m *messenger) EditResponse(it *discordgo.Interaction, components ...discor
 
 type followup func(components ...discordgo.MessageComponent) (*discordgo.Message, error)
 
-func (m *messenger) DeferMessageCreate(it *discordgo.Interaction) (followup, error) {
+func (m *messenger) DeferMessageCreate(it *discordgo.Interaction, ephemeral bool) (followup, error) {
+	var flags discordgo.MessageFlags
+	if ephemeral {
+		flags |= discordgo.MessageFlagsEphemeral
+	}
 	if err := m.client.InteractionRespond(it, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: flags,
+		},
 	}); err != nil {
 		return nil, err
 	}

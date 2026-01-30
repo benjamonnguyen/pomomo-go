@@ -9,6 +9,8 @@ const (
 	ShortBreakOption = "short_break"
 	LongBreakOption  = "long_break"
 	IntervalsOption  = "intervals"
+	NoDeafenOption   = "no_deafen"
+	NoMuteOption     = "no_mute"
 )
 
 func float64Ptr(f float64) *float64 {
@@ -46,6 +48,16 @@ var StartCommand = discordgo.ApplicationCommand{
 			Description: "number of intervals between long breaks (Default: 4)",
 			MinValue:    float64Ptr(1),
 			MaxValue:    20,
+		},
+		{
+			Type:        discordgo.ApplicationCommandOptionBoolean,
+			Name:        NoDeafenOption,
+			Description: "participants will not be deafened during pomodoro intervals (Default: false)",
+		},
+		{
+			Type:        discordgo.ApplicationCommandOptionBoolean,
+			Name:        NoMuteOption,
+			Description: "participants will not be muted during pomodoro intervals (Default: false)",
 		},
 	},
 }

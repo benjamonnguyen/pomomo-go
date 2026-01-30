@@ -16,13 +16,13 @@ var updateTickRate = 20 * time.Second
 
 type startSessionRequest struct {
 	guildID, textCID, voiceCID, messageID string
+	settings                              pomomo.SessionSettingsRecord
 
 	// user that is starting the session to be joined as participant
 	user struct {
 		id         string
 		mute, deaf bool
 	}
-	settings models.SessionSettings
 }
 
 type SessionManager interface {
@@ -219,14 +219,8 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		}
 
 		// Insert session settings record
-		settingsRecord := pomomo.SessionSettingsRecord{
-			SessionID:  inserted.ID,
-			Pomodoro:   req.settings.Pomodoro,
-			ShortBreak: req.settings.ShortBreak,
-			LongBreak:  req.settings.LongBreak,
-			Intervals:  req.settings.Intervals,
-		}
-		_, err = m.repo.InsertSettings(ctx, settingsRecord)
+		req.settings.SessionID = inserted.ID
+		_, err = m.repo.InsertSettings(ctx, req.settings)
 		if err != nil {
 			return fmt.Errorf("failed to insert session settings: %w", err)
 		}
