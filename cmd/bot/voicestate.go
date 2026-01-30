@@ -14,8 +14,8 @@ type VoiceStateManager interface {
 	// AutoShush preserves existing mute or deafen voice state.
 	AutoShush(context.Context, models.Session)
 
-	// RestoreParticipants restores voice state of session participants
-	RestoreParticipants(pomomo.VoiceChannelID)
+	// UnshushParticipants restores voice state of session participants
+	UnshushParticipants(pomomo.VoiceChannelID)
 
 	// Close restores voice state of participants across all sessions
 	Close()
@@ -92,7 +92,7 @@ func (o *voiceStateMgr) AutoShush(ctx context.Context, s models.Session) {
 	wg.Wait()
 }
 
-func (o *voiceStateMgr) RestoreParticipants(cid pomomo.VoiceChannelID) {
+func (o *voiceStateMgr) UnshushParticipants(cid pomomo.VoiceChannelID) {
 	unlock := o.participantsProvider.AcquireVoiceChannelLock(cid)
 	defer unlock()
 	var wg sync.WaitGroup
@@ -111,7 +111,7 @@ func (o *voiceStateMgr) Close() {
 	cids := o.participantsProvider.GetVoiceChannelIDs()
 	for _, cid := range cids {
 		wg.Go(func() {
-			o.RestoreParticipants(cid)
+			o.UnshushParticipants(cid)
 		})
 	}
 	wg.Wait()

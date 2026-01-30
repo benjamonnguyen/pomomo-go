@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -26,34 +27,42 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+//go:embed sounds/*.dca
+var sounds embed.FS
+
 const (
 	RepoURL = "https://github.com/benjamonnguyen/pomomo-go"
 	Version = "0.0.0"
 )
 
 func main() {
-	// logger
-	log.SetLevel(log.DebugLevel)
-	log.SetReportCaller(true)
-	topCtx, topCtxC := context.WithCancel(context.Background())
-	initTimeout, initTimeoutC := context.WithTimeout(topCtx, 10*time.Second)
-
 	// config
 	cfg, err := pomomo.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 	var dbURL, botToken, botName string
-	var pomodoroSoundPath, longBreakSoundPath, shortBreakSoundPath, idleSoundPath string
+	var shardID, shardCnt string
+	var logLvl string
 	panicif(cfg.GetMany([]config.Key{
 		pomomo.DatabaseURLKey,
 		pomomo.BotTokenKey,
 		pomomo.BotNameKey,
-		pomomo.PomodoroSoundPathKey,
-		pomomo.LongBreakSoundPathKey,
-		pomomo.ShortBreakSoundPathKey,
-		pomomo.IdleSoundPathKey,
-	}, &dbURL, &botToken, &botName, &pomodoroSoundPath, &longBreakSoundPath, &shortBreakSoundPath, &idleSoundPath))
+		pomomo.ShardIDKey,
+		pomomo.ShardCountKey,
+		pomomo.LogLevelKey,
+	}, &dbURL, &botToken, &botName,
+		&shardID, &shardCnt, &logLvl))
+
+	// logger
+	log.SetReportCaller(true)
+	lvl, err := log.ParseLevel(logLvl)
+	if err != nil {
+		log.Info("failed to parse log level - falling back to INFO", "err", err, "logLvl", logLvl)
+	}
+	log.SetLevel(lvl)
+	topCtx, topCtxC := context.WithCancel(context.Background())
+	initTimeout, initTimeoutC := context.WithTimeout(topCtx, 10*time.Second)
 
 	// db
 	log.Info("opening db", "url", dbURL)
@@ -82,20 +91,25 @@ func main() {
 		log.Fatal(err)
 	}
 	cl.ShouldRetryOnRateLimit = false
-	// ShardID:                            0,
-	// ShardCount:                         1,
+	if shardCnt != "" {
+		n, err := strconv.Atoi(shardCnt)
+		panicif(err)
+		cl.ShardCount = n
+	}
+	if shardID != "" {
+		n, err := strconv.Atoi(shardID)
+		panicif(err)
+		cl.ShardID = n
+	}
 	cl.Client = &http.Client{Timeout: (20 * time.Second)}
 	cl.UserAgent = fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)
 	cl.ShouldReconnectVoiceOnSessionError = true
 
 	dm := NewDiscordMessenger(cl)
 	discordAdapter := discordgo.NewDiscordAdapter(cl)
-	opusAudioLoader := newOpusAudioLoader(map[audio]string{
-		PomodoroAudio:   pomodoroSoundPath,
-		LongBreakAudio:  longBreakSoundPath,
-		ShortBreakAudio: shortBreakSoundPath,
-		IdleAudio:       idleSoundPath,
-	})
+
+	// audio
+	opusAudioLoader := newOpusAudioLoader(sounds)
 	vsMgr := NewVoiceStateManager(
 		participantsProvider,
 		discordAdapter,
@@ -107,7 +121,7 @@ func main() {
 	sessionManager.OnSessionUpdate(func(ctx context.Context, before, curr models.Session) {
 		// on restore
 		if before == (models.Session{}) {
-			vsMgr.AutoShush(ctx, before)
+			vsMgr.AutoShush(ctx, curr)
 			return
 		}
 
@@ -124,7 +138,7 @@ func main() {
 				}
 			})
 			wg.Go(func() {
-				vsMgr.RestoreParticipants(curr.Record.VoiceCID)
+				vsMgr.UnshushParticipants(curr.Record.VoiceCID)
 				cnt := sessionManager.GuildSessionCnt(curr.Record.GuildID)
 				if cnt == 1 {
 					if conn := cl.VoiceConnections[string(curr.Record.GuildID)]; conn != nil {

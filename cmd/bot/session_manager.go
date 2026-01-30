@@ -89,6 +89,7 @@ func (m *sessionManager) GuildSessionCnt(gid string) int {
 
 func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 	var toRestore []*models.Session
+	var toEnd []models.Session
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		pendingSessionRecords, err := m.repo.GetSessionsByStatus(ctx, pomomo.SessionRunning, pomomo.SessionPaused)
 		if err != nil {
@@ -102,13 +103,8 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 			}
 			session := models.SessionFromExistingRecords(r, existingSettings)
 			if session.TimeRemaining() < (-1 * time.Hour) {
-				// has been stale for more than an hour
-				_, err := m.endSession(m.parentCtx, session)
-				if err != nil {
-					log.Error("failed ending stale session", "sessionID", session.ID, "err", err)
-					continue
-				}
-				log.Info("ended stale session", "sessionID", session.ID)
+				// bot has been down for over an hour
+				toEnd = append(toEnd, session)
 				continue
 			}
 			for session.TimeRemaining() <= 0 {
@@ -123,6 +119,21 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 		return err
 	}
 
+	// end stale sessions
+	for _, s := range toEnd {
+		ended, err := m.endSession(m.parentCtx, s)
+		if err != nil {
+			log.Error("failed ending stale session", "sessionID", s.ID, "err", err)
+			continue
+		}
+		if m.onUpdate != nil {
+			m.onUpdate(ctx, s, ended)
+		}
+		log.Info("ended stale session", "sessionID", s.ID)
+		continue
+	}
+
+	//
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		session := *toRestore[i]
@@ -282,7 +293,6 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 }
 
 func (m *sessionManager) endSession(ctx context.Context, s models.Session) (models.Session, error) {
-	before := s
 	s.Record.Status = pomomo.SessionEnded
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
 		_, err := m.repo.UpdateSession(ctx, s.ID, s.Record)
@@ -295,9 +305,6 @@ func (m *sessionManager) endSession(ctx context.Context, s models.Session) (mode
 		}
 		return nil
 	})
-	if m.onUpdate != nil {
-		m.onUpdate(ctx, before, s)
-	}
 	return s, err
 }
 
@@ -313,6 +320,9 @@ func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelI
 		return models.Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
 
+	if m.onUpdate != nil {
+		m.onUpdate(ctx, *s, ended)
+	}
 	m.cache.Remove(cid)
 	return ended, nil
 }
@@ -347,7 +357,6 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 	sessionCtxs := make([]context.Context, 0, len(sessions))
 	for _, s := range sessions {
 		s.Greeting = getGreeting() // so that greeting doesn't change between updates
-		log.Debug("greeting", "greeting", s.Greeting)
 		key := s.Record.TextCID
 		_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
 		if exists {

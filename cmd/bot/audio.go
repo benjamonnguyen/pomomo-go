@@ -1,32 +1,27 @@
 package main
 
 import (
+	"embed"
 	"encoding/binary"
 	"io"
-	"os"
+	"path"
 
 	"github.com/charmbracelet/log"
 )
 
-type audio uint8
+type audio string
 
 const (
-	_ audio = iota
-	PomodoroAudio
-	LongBreakAudio
-	ShortBreakAudio
-	IdleAudio
+	PomodoroAudio   audio = "pomodoro.dca"
+	LongBreakAudio  audio = "long_break.dca"
+	ShortBreakAudio audio = "short_break.dca"
 )
 
-func newOpusAudioLoader(audioToOpusContainerPath map[audio]string) *opusAudioLoader {
+func newOpusAudioLoader(fs embed.FS) *opusAudioLoader {
 	audioPackets := make(map[audio][][]byte)
-	loadPackets := func(audio audio, opusContainerPath string) {
-		if opusContainerPath == "" {
-			log.Info("no opusContainerPath - skip loading", "audio", audio)
-			return
-		}
-		log.Info("loading packets", "audio", audio, "opusContainerPath", opusContainerPath)
-		f, err := os.Open(opusContainerPath)
+	loadPackets := func(audio audio, fs embed.FS) {
+		log.Info("loading packets", "audio", audio)
+		f, err := fs.Open(path.Join("sounds", string(audio)))
 		if err != nil {
 			panic(err)
 		}
@@ -54,8 +49,12 @@ func newOpusAudioLoader(audioToOpusContainerPath map[audio]string) *opusAudioLoa
 			audioPackets[audio] = append(audioPackets[audio], packet)
 		}
 	}
-	for audio, opusContainerPath := range audioToOpusContainerPath {
-		loadPackets(audio, opusContainerPath)
+	for _, a := range []audio{
+		PomodoroAudio,
+		LongBreakAudio,
+		ShortBreakAudio,
+	} {
+		loadPackets(a, fs)
 	}
 	return &opusAudioLoader{
 		audioPackets: audioPackets,

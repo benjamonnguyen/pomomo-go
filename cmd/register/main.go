@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/benjamonnguyen/deadsimple/config"
 	"github.com/benjamonnguyen/pomomo-go"
@@ -17,14 +18,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var botToken string
+	var botToken, shardCnt, shardID string
 	panicif(cfg.GetMany([]config.Key{
 		pomomo.BotTokenKey,
-	}, &botToken))
+		pomomo.ShardCountKey,
+		pomomo.ShardIDKey,
+	}, &botToken, &shardCnt, &shardID))
 
 	bot, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if shardCnt != "" {
+		n, err := strconv.Atoi(shardCnt)
+		panicif(err)
+		bot.ShardCount = n
+	}
+	if shardID != "" {
+		n, err := strconv.Atoi(shardID)
+		panicif(err)
+		bot.ShardID = n
 	}
 
 	// Open a connection

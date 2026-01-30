@@ -9,13 +9,12 @@ import (
 )
 
 const (
-	DatabaseURLKey         config.Key = "POMOMO_DB_URL"
-	BotNameKey             config.Key = "POMOMO_BOT_NAME"
-	BotTokenKey            config.Key = "POMOMO_BOT_TOKEN"
-	PomodoroSoundPathKey   config.Key = "POMOMO_POMODORO_SOUND_PATH"
-	LongBreakSoundPathKey  config.Key = "POMOMO_LONG_BREAK_SOUND_PATH"
-	ShortBreakSoundPathKey config.Key = "POMOMO_SHORT_BREAK_SOUND_PATH"
-	IdleSoundPathKey       config.Key = "POMOMO_IDLE_SOUND_PATH"
+	DatabaseURLKey config.Key = "POMOMO_DB_URL"
+	BotNameKey     config.Key = "POMOMO_BOT_NAME"
+	BotTokenKey    config.Key = "POMOMO_BOT_TOKEN"
+	ShardIDKey     config.Key = "POMOMO_SHARD_ID"
+	ShardCountKey  config.Key = "POMOMO_SHARD_COUNT"
+	LogLevelKey    config.Key = "POMOMO_LOG_LEVEL"
 )
 
 func LoadConfig() (config.Config, error) {
@@ -34,19 +33,11 @@ func LoadConfig() (config.Config, error) {
 			Required: true,
 		},
 		{
-			Key:      PomodoroSoundPathKey,
+			Key:      ShardIDKey,
 			Required: false,
 		},
 		{
-			Key:      LongBreakSoundPathKey,
-			Required: false,
-		},
-		{
-			Key:      ShortBreakSoundPathKey,
-			Required: false,
-		},
-		{
-			Key:      IdleSoundPathKey,
+			Key:      ShardCountKey,
 			Required: false,
 		},
 	}

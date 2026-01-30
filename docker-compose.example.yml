@@ -1,0 +1,13 @@
+services:
+  pomomo-bot:
+    image: ghcr.io/benjamonnguyen/pomomo-go:latest
+    container_name: pomomo-bot
+    restart: unless-stopped
+    environment:
+      # Override config path if needed
+      - POMOMO_CONFIG_PATH=/app/.env
+    volumes:
+      # Mount your .env file (create from .env.example)
+      - ./.env:/app/.env:ro
+      # Mount data directory for database persistence
+      - ./data:/app/data

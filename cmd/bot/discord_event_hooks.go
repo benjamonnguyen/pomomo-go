@@ -26,7 +26,6 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp P
 	unlock := pp.AcquireVoiceChannelLock(cid)
 	defer unlock()
 
-	log.Debug("removing participant on voice channel leave", "uid", u.UserID, "cid", cid)
 	if p := pp.Get(u.UserID, cid); p != nil {
 		if err := pp.Delete(ctx, p.ID); err != nil {
 			log.Error("failed participant delete on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
@@ -34,6 +33,7 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp P
 		if err := vsSvc.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
 			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
 		}
+		log.Debug("removed participant on voice channel leave", "uid", u.UserID, "sid", p.Record.SessionID)
 	}
 }
 
@@ -147,7 +147,7 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 		}
 		return true
 	}
-	log.Debug("started session", "id", session.ID)
+	log.Info("started session", "id", session.ID)
 
 	if err := s.ChannelMessagePin(m.ChannelID, msg.ID); err != nil {
 		log.Error("failed to pin message", "err", err)
@@ -186,7 +186,7 @@ func SkipInterval(ctx context.Context, sessionManager SessionManager, dm Discord
 		}
 		return true
 	}
-	log.Debug("skipped interval", "new", session.Record.CurrentInterval)
+	log.Info("skipped interval", "new", session.Record.CurrentInterval)
 
 	_, err = followup(SessionMessageComponents(session)...)
 	if err != nil {
@@ -223,7 +223,7 @@ func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo
 		log.Error("failed EndSession", "sid", session.ID, "gid", session.Record.GuildID, "err", err)
 		return true
 	}
-	log.Debug("ended session", "id", session.ID)
+	log.Info("ended session", "id", session.ID)
 	return true
 }
 
@@ -323,6 +323,6 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 		log.Error(err)
 		return true
 	}
-	log.Debug("user joined session", "userID", m.Member.User.ID, "cid", session.Record.VoiceCID, "sessionID", session.ID)
+	log.Info("user joined session", "userID", m.Member.User.ID, "cid", session.Record.VoiceCID, "sessionID", session.ID)
 	return true
 }
