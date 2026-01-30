@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"strings"
 
 	"github.com/benjamonnguyen/pomomo-go"
@@ -178,7 +179,7 @@ const (
 func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 	if s.Record.Status == pomomo.SessionEnded {
 		return []discordgo.MessageComponent{
-			getEndMessage(),
+			TextDisplay(getFarewell()),
 		}
 	}
 	// action row
@@ -244,11 +245,12 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 	}
 
 	//
-	return []discordgo.MessageComponent{
-		getStartMessage(),
-		settingsContainer,
-		actionRow,
+	var components []discordgo.MessageComponent
+	if s.Greeting != "" {
+		components = append(components, TextDisplay(s.Greeting))
 	}
+	components = append(components, settingsContainer, actionRow)
+	return components
 }
 
 func timerBar(s models.Session) string {
@@ -264,12 +266,24 @@ func timerBar(s models.Session) string {
 	return strings.Repeat(filledChar, filled) + strings.Repeat(emptyChar, length-filled)
 }
 
-func getStartMessage() discordgo.MessageComponent {
-	// TODO startmessage list from config
-	return TextDisplay("It's productivity o'clock!")
+var greetings = []string{
+	"Howdy howdy! Let's do this thang :cowboy:",
+	"Hey there! Let's get started :books:",
+	"It's productivity o'clock! :alarm_clock:",
+	"Let's ketchup on some work! :tomato:",
 }
 
-func getEndMessage() discordgo.MessageComponent {
+var farewells = []string{
+	"See you later! 👋",
+	"Goodbye! 👋",
+	"Great work! 👋",
+}
+
+func getGreeting() string {
+	return greetings[rand.Intn(len(greetings))]
+}
+
+func getFarewell() string {
 	// TODO display stats in end message
-	return TextDisplay("Good stuff!")
+	return farewells[rand.Intn(len(farewells))]
 }

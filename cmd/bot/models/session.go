@@ -23,6 +23,7 @@ type Session struct {
 	Settings pomomo.SessionSettingsRecord
 	Stats    SessionStats // TODO maybe extract stats, handle updates in an update hook
 	Record   pomomo.SessionRecord
+	Greeting string
 }
 
 func SessionFromExistingRecords(record pomomo.ExistingSessionRecord, settings pomomo.ExistingSessionSettingsRecord) Session {

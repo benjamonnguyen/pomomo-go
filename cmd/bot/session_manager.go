@@ -346,6 +346,8 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 
 	sessionCtxs := make([]context.Context, 0, len(sessions))
 	for _, s := range sessions {
+		s.Greeting = getGreeting() // so that greeting doesn't change between updates
+		log.Debug("greeting", "greeting", s.Greeting)
 		key := s.Record.TextCID
 		_, exists := c.locks[key] // checks locks instead of sessions in case of Hold()
 		if exists {
