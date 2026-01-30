@@ -13,11 +13,6 @@ type SessionParticipant struct {
 	StartedIntervalAt time.Time
 }
 
-type SessionSettings struct {
-	Pomodoro, ShortBreak, LongBreak time.Duration
-	Intervals                       int
-}
-
 type SessionStats struct {
 	CompletedPomodoros int
 	Skips              int
@@ -25,7 +20,7 @@ type SessionStats struct {
 
 type Session struct {
 	ID       pomomo.SessionID
-	Settings SessionSettings
+	Settings pomomo.SessionSettingsRecord
 	Stats    SessionStats // TODO maybe extract stats, handle updates in an update hook
 	Record   pomomo.SessionRecord
 }
@@ -35,18 +30,13 @@ func SessionFromExistingRecords(record pomomo.ExistingSessionRecord, settings po
 		panic("missing required IDs")
 	}
 	return Session{
-		ID:     record.ID,
-		Record: record.SessionRecord,
-		Settings: SessionSettings{
-			Pomodoro:   settings.Pomodoro,
-			ShortBreak: settings.ShortBreak,
-			LongBreak:  settings.LongBreak,
-			Intervals:  settings.Intervals,
-		},
+		ID:       record.ID,
+		Record:   record.SessionRecord,
+		Settings: settings.SessionSettingsRecord,
 	}
 }
 
-func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, settings SessionSettings) Session {
+func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, settings pomomo.SessionSettingsRecord) Session {
 	if guildID == "" || textCID == "" || voiceCID == "" {
 		panic("missing required IDs")
 	}

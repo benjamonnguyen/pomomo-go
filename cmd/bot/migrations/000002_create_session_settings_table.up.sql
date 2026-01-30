@@ -4,10 +4,12 @@ CREATE TABLE session_settings (
     short_break_duration INTEGER NOT NULL,
     long_break_duration INTEGER NOT NULL,
     intervals INTEGER NOT NULL,
+    no_mute BOOL NOT NULL,
+    no_deafen BOOL NOT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
     UNIQUE(session_id)
 );
 
-CREATE INDEX session_id_idx ON session_settings (session_id);
+CREATE INDEX session_settings_session_id_idx ON session_settings (session_id);

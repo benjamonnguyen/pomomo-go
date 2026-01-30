@@ -48,27 +48,38 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 	}
 
 	// Parse command options with defaults
-	settings := models.SessionSettings{
+	settings := pomomo.SessionSettingsRecord{
 		Pomodoro:   20 * time.Minute,
 		ShortBreak: 5 * time.Minute,
 		LongBreak:  15 * time.Minute,
 		Intervals:  4,
+		NoMute:     false,
+		NoDeafen:   false,
 	}
 	for _, opt := range data.Options {
-		val, ok := opt.Value.(float64)
-		if !ok {
-			continue
-		}
-		intVal := int(val)
 		switch opt.Name {
-		case pomomo.PomodoroOption:
-			settings.Pomodoro = time.Duration(intVal) * time.Minute
-		case pomomo.ShortBreakOption:
-			settings.ShortBreak = time.Duration(intVal) * time.Minute
-		case pomomo.LongBreakOption:
-			settings.LongBreak = time.Duration(intVal) * time.Minute
-		case pomomo.IntervalsOption:
-			settings.Intervals = intVal
+		case pomomo.PomodoroOption, pomomo.ShortBreakOption, pomomo.LongBreakOption, pomomo.IntervalsOption:
+			if val, ok := opt.Value.(float64); ok {
+				intVal := int(val)
+				switch opt.Name {
+				case pomomo.PomodoroOption:
+					settings.Pomodoro = time.Duration(intVal) * time.Minute
+				case pomomo.ShortBreakOption:
+					settings.ShortBreak = time.Duration(intVal) * time.Minute
+				case pomomo.LongBreakOption:
+					settings.LongBreak = time.Duration(intVal) * time.Minute
+				case pomomo.IntervalsOption:
+					settings.Intervals = intVal
+				}
+			}
+		case pomomo.NoMuteOption:
+			if val, ok := opt.Value.(bool); ok {
+				settings.NoMute = val
+			}
+		case pomomo.NoDeafenOption:
+			if val, ok := opt.Value.(bool); ok {
+				settings.NoDeafen = val
+			}
 		}
 	}
 
@@ -230,7 +241,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 		return false
 	}
 
-	followup, err := dm.DeferMessageUpdate(m.Interaction)
+	followup, err := dm.DeferMessageCreate(m.Interaction, true)
 	if err != nil {
 		log.Error(err)
 		return true
@@ -250,8 +261,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	pID, err := pp.GetParticipantID(ctx, m.Member.User.ID)
 	if err != nil {
 		log.Error("failed to check existing participant", "err", err)
-		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
-		if _, err := followup(components...); err != nil {
+		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -259,8 +269,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	if pID != "" {
 		if err := pp.Delete(ctx, pID); err != nil {
 			log.Error("failed to delete existing participant", "err", err)
-			components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
-			if _, err := followup(components...); err != nil {
+			if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
 				log.Error(err)
 			}
 			return true
@@ -271,8 +280,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	vs, err := s.State.VoiceState(m.GuildID, m.Member.User.ID)
 	if err != nil {
 		log.Error("failed to get voice state", "userID", m.Member.User.ID, "sid", session.ID, "err", err)
-		_, err = followup(TextDisplay("You need to be in a voice channel to join the session."))
-		if err != nil {
+		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -284,8 +292,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 		err = s.GuildMemberMove(m.GuildID, m.Member.User.ID, &voiceCIDStr)
 		if err != nil {
 			log.Error("failed to move user to voice channel", "err", err, "voiceCID", session.Record.VoiceCID)
-			components := append(SessionMessageComponents(session), TextDisplay(m.Member.DisplayName()+" failed to join session."))
-			if _, err := followup(components...); err != nil {
+			if _, err := followup(TextDisplay("Failed to move you to the session voice channel.")); err != nil {
 				log.Error(err)
 			}
 			return true
@@ -303,8 +310,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	})
 	if err != nil {
 		log.Error("failed to insert participant", "err", err)
-		components := append(SessionMessageComponents(session), TextDisplay(m.Member.DisplayName()+" failed to join session."))
-		if _, err := followup(components...); err != nil {
+		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -312,7 +318,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 
 	go vsMgr.AutoShush(ctx, session)
 
-	_, err = followup(SessionMessageComponents(session)...)
+	_, err = followup(TextDisplay("Joined session!"))
 	if err != nil {
 		log.Error(err)
 		return true
