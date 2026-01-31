@@ -81,9 +81,9 @@ func main() {
 	)
 
 	// TODO all service objects should take a logger arg
+	// repos
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
-	participantsProvider := NewParticipantsProvider(sessionRepo, *log.Default())
-	panicif(participantsProvider.RestoreCache(initTimeout))
+	participantRepo := sqlite.NewParticipantRepo(dbGetter, *log.Default())
 
 	// set up discord cl
 	cl, err := dg.New("Bot " + botToken)
@@ -108,16 +108,21 @@ func main() {
 	dm := NewDiscordMessenger(cl)
 	discordAdapter := discordgo.NewDiscordAdapter(cl)
 
+	// participant manager
+	pm := NewParticipantManager(participantRepo, *log.Default())
+	panicif(pm.RestoreCache(initTimeout))
+	pm.AfterUpdate(nil) // TODO pm.AfterUpdate
+
 	// audio
 	opusAudioLoader := newOpusAudioLoader(sounds)
 	vsMgr := NewVoiceStateManager(
-		participantsProvider,
+		pm,
 		discordAdapter,
 		*log.Default(),
 	)
 
 	// session manager
-	sessionManager := NewSessionManager(topCtx, sessionRepo, participantsProvider, tx)
+	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
 	sessionManager.OnSessionUpdate(func(ctx context.Context, before, curr models.Session) {
 		// on restore
 		if before == (models.Session{}) {
@@ -138,7 +143,7 @@ func main() {
 				}
 			})
 			wg.Go(func() {
-				vsMgr.UnshushParticipants(curr.Record.VoiceCID)
+				vsMgr.RestoreVoiceState(curr.Record.VoiceCID)
 				cnt := sessionManager.GuildSessionCnt(curr.Record.GuildID)
 				if cnt == 1 {
 					if conn := cl.VoiceConnections[string(curr.Record.GuildID)]; conn != nil {
@@ -148,9 +153,9 @@ func main() {
 					}
 				}
 				// delete participants
-				ps := participantsProvider.GetAll(curr.Record.VoiceCID)
+				ps := pm.GetAll(curr.Record.VoiceCID)
 				for _, p := range ps {
-					_ = participantsProvider.Delete(ctx, p.ID)
+					_ = pm.Delete(ctx, p.ID)
 				}
 			})
 			wg.Wait()
@@ -158,7 +163,7 @@ func main() {
 		}
 
 		// end empty session
-		if all := participantsProvider.GetAll(curr.Record.VoiceCID); len(all) == 0 {
+		if all := pm.GetAll(curr.Record.VoiceCID); len(all) == 0 {
 			_, err := sessionManager.EndSession(ctx, curr.Record.TextCID)
 			if err != nil {
 				log.Error("failed to end empty session", "sid", curr.ID, "err", err)
@@ -202,13 +207,13 @@ func main() {
 
 	// discord event hooks
 	cl.AddHandler(func(s *dg.Session, u *dg.VoiceStateUpdate) {
-		RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, participantsProvider, s, u)
+		RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, s, u)
 	})
 	cl.AddHandler(func(s *dg.Session, m *dg.InteractionCreate) {
-		_ = StartSession(topCtx, sessionManager, dm, participantsProvider, s, m) ||
+		_ = StartSession(topCtx, sessionManager, dm, pm, s, m) ||
 			SkipInterval(topCtx, sessionManager, dm, s, m) ||
-			EndSession(topCtx, sessionManager, s, m) || // messaging handled in OnSessionCleanup hook
-			JoinSession(topCtx, sessionManager, vsMgr, participantsProvider, dm, s, m)
+			EndSession(topCtx, sessionManager, s, m) ||
+			JoinSession(topCtx, sessionManager, vsMgr, pm, dm, s, m)
 	})
 
 	// open connection

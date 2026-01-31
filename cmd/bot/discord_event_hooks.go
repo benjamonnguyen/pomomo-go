@@ -14,7 +14,7 @@ const (
 	defaultErrorMsg = "Looks like something went wrong. Try again in a bit or reach out to support."
 )
 
-func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp ParticipantsProvider, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
+func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp ParticipantsManager, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
 	if u.BeforeUpdate == nil {
 		// don't need to handle joins since participation is removed on leave
 		return
@@ -37,7 +37,7 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp P
 	}
 }
 
-func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsProvider, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
+func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsManager, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionApplicationCommand {
 		return false
 	}
@@ -227,7 +227,7 @@ func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo
 	return true
 }
 
-func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr VoiceStateManager, pp ParticipantsProvider, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
+func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr VoiceStateUpdater, pp ParticipantsManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionMessageComponent {
 		return false
 	}
@@ -305,7 +305,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	}
 
 	// Insert participant
-	_, err = pp.Insert(ctx, pomomo.SessionParticipantRecord{
+	_, err = pp.Insert(ctx, pomomo.ParticipantRecord{
 		SessionID:  session.ID,
 		GuildID:    session.Record.GuildID,
 		VoiceCID:   session.Record.VoiceCID,
