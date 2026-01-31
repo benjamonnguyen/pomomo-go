@@ -110,30 +110,23 @@ func main() {
 
 	// participant manager
 	pm := NewParticipantManager(participantRepo, *log.Default())
-	panicif(pm.RestoreCache(initTimeout))
-	pm.AfterUpdate(nil) // TODO pm.AfterUpdate
 
 	// audio
 	opusAudioLoader := newOpusAudioLoader(sounds)
-	vsMgr := NewVoiceStateManager(
-		pm,
-		discordAdapter,
-		*log.Default(),
-	)
+	autoshusher := &autoshusher{
+		loadFn: opusAudioLoader.Load,
+		sendFn: discordAdapter.SendOpusAudio,
+		pm:     pm,
+		vs:     discordAdapter,
+	}
 
 	// session manager
-	sessionManager := NewSessionManager(topCtx, sessionRepo, tx)
-	sessionManager.OnSessionUpdate(func(ctx context.Context, before, curr models.Session) {
-		// on restore
-		if before == (models.Session{}) {
-			vsMgr.AutoShush(ctx, curr)
-			return
-		}
-
-		// on end
+	sessionManager := NewSessionManager(topCtx, sessionRepo, pm, tx)
+	sessionManager.AfterUpdate(func(ctx context.Context, before, curr models.Session) {
 		if curr.Record.Status == pomomo.SessionEnded {
 			var wg sync.WaitGroup
 			wg.Go(func() {
+				// handle channel message cleanup
 				_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
 				if err != nil {
 					log.Error("failed to edit discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
@@ -143,87 +136,91 @@ func main() {
 				}
 			})
 			wg.Go(func() {
-				vsMgr.RestoreVoiceState(curr.Record.VoiceCID)
+				// handle participant cleanup
+				unlock := pm.AcquireVoiceChannelLock(curr.Record.VoiceCID)
+				defer unlock()
+				participants := pm.GetAll(curr.Record.VoiceCID)
+
+				var wgg sync.WaitGroup
+				for _, p := range participants {
+					if err := restoreVoiceState(ctx, discordAdapter, p); err != nil {
+						log.Error(err)
+					}
+					if err := pm.Delete(ctx, p.ID); err != nil {
+						log.Error(err)
+					}
+				}
+				wgg.Wait()
+
 				cnt := sessionManager.GuildSessionCnt(curr.Record.GuildID)
-				if cnt == 1 {
+				if cnt == 0 {
 					if conn := cl.VoiceConnections[string(curr.Record.GuildID)]; conn != nil {
 						if err := conn.Disconnect(); err != nil {
 							log.Error(err)
 						}
 					}
 				}
-				// delete participants
-				ps := pm.GetAll(curr.Record.VoiceCID)
-				for _, p := range ps {
-					_ = pm.Delete(ctx, p.ID)
-				}
 			})
 			wg.Wait()
 			return
 		}
 
+		unlock := pm.AcquireVoiceChannelLock(curr.Record.VoiceCID)
+		defer unlock()
+		participants := pm.GetAll(curr.Record.VoiceCID)
+
 		// end empty session
-		if all := pm.GetAll(curr.Record.VoiceCID); len(all) == 0 {
-			_, err := sessionManager.EndSession(ctx, curr.Record.TextCID)
-			if err != nil {
-				log.Error("failed to end empty session", "sid", curr.ID, "err", err)
-				return
-			}
-			log.Debug("ended empty session", "sid", curr.ID)
+		if len(participants) == 0 {
+			// start go routine so that we don't get deadlocked from a recursive trigger
+			go func() {
+				_, err := sessionManager.EndSession(ctx, curr.Record.TextCID)
+				if err != nil {
+					log.Error("failed to end empty session", "sid", curr.ID, "err", err)
+					return
+				}
+				log.Debug("ended empty session", "sid", curr.ID)
+			}()
 			return
 		}
 
-		// update timer bar
-		_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
-		if err != nil {
-			log.Error("failed to edit discord channel message",
-				"channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
-		}
-
-		if before.Record.CurrentInterval != curr.Record.CurrentInterval {
-			// is new interval
-			skipped := curr.Stats.Skips > before.Stats.Skips
-			if curr.Record.CurrentInterval != pomomo.PomodoroInterval {
-				// unshush before playing
-				vsMgr.AutoShush(ctx, curr)
-				if !skipped {
-					if err := playIntervalAlert(ctx, curr, opusAudioLoader.Load, discordAdapter.SendOpusAudio); err != nil {
-						log.Error("failed to play interval alert", "guildID", curr.Record.GuildID, "channelID", curr.Record.VoiceCID, "err", err)
-					}
-				}
-			} else {
-				// shush after playing
-				if !skipped {
-					if err := playIntervalAlert(ctx, curr, opusAudioLoader.Load, discordAdapter.SendOpusAudio); err != nil {
-						log.Error("failed to play interval alert", "guildID", curr.Record.GuildID, "channelID", curr.Record.VoiceCID, "err", err)
-					}
-				}
-				vsMgr.AutoShush(ctx, curr)
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			// update timer bar
+			_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
+			if err != nil {
+				log.Error("failed to edit discord channel message",
+					"channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 			}
+		})
+
+		wg.Go(func() {
+			autoshusher.Autoshush(ctx, participants, before, curr)
 			// TODO persist participant stats
-		}
+		})
+
+		wg.Wait()
 	})
-	panicif(sessionManager.RestoreSessions(initTimeout))
 
 	// discord event hooks
 	cl.AddHandler(func(s *dg.Session, u *dg.VoiceStateUpdate) {
-		RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, s, u)
+		_ = RestoreParticipantVoiceStateOnChannelJoin(topCtx, discordAdapter, pm, s, u) ||
+			RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, s, u)
 	})
 	cl.AddHandler(func(s *dg.Session, m *dg.InteractionCreate) {
 		_ = StartSession(topCtx, sessionManager, dm, pm, s, m) ||
 			SkipInterval(topCtx, sessionManager, dm, s, m) ||
 			EndSession(topCtx, sessionManager, s, m) ||
-			JoinSession(topCtx, sessionManager, vsMgr, pm, dm, s, m)
+			JoinSession(topCtx, sessionManager, autoshusher, pm, dm, s, m)
 	})
 
-	// open connection
+	// start up
 	if err := cl.Open(); err != nil {
 		log.Fatal("Error opening connection", "err", err)
 	}
-	log.Info(botName + " running. Press CTRL-C to exit.")
-
-	// init done
+	panicif(pm.RestoreCache(initTimeout))
+	panicif(sessionManager.RestoreSessions(initTimeout))
 	initTimeoutC()
+	log.Info(botName + " running. Press CTRL-C to exit.")
 
 	// graceful shutdown
 	sc := make(chan os.Signal, 1)
@@ -231,13 +228,24 @@ func main() {
 	<-sc
 	log.Info("terminating " + botName)
 	topCtxC()
-	shutdownTimeout, shutdownTimeoutC := context.WithTimeout(context.Background(), time.Minute)
+	shutdownTimeout, shutdownTimeoutC := context.WithTimeout(context.Background(), 10*time.Second)
 	go func() {
 		// to ensure proper shutdown ordering...
 		if err := sessionManager.Shutdown(); err != nil {
 			log.Error(err)
 		}
-		vsMgr.Close()
+		var wg sync.WaitGroup
+		for _, cid := range pm.GetVoiceChannelIDs() {
+			participants := pm.GetAll(cid)
+			for _, p := range participants {
+				wg.Go(func() {
+					if err := restoreVoiceState(shutdownTimeout, discordAdapter, p); err != nil {
+						log.Error(err)
+					}
+				})
+			}
+		}
+		wg.Wait()
 		if err := cl.Close(); err != nil {
 			log.Error(err)
 		}
@@ -249,10 +257,14 @@ func main() {
 	}
 }
 
+type (
+	loadOpusAudio func(audio) [][]byte
+	sendOpusAudio func(context.Context, [][]byte, string, pomomo.VoiceChannelID) error
+)
+
 func playIntervalAlert(
 	ctx context.Context, s models.Session,
-	loadOpusAudio func(audio) [][]byte,
-	sendOpusAudio func(context.Context, [][]byte, string, pomomo.VoiceChannelID) error,
+	loadFn loadOpusAudio, sendFn sendOpusAudio,
 ) error {
 	switch s.Record.Status {
 	case pomomo.SessionRunning:
@@ -265,16 +277,33 @@ func playIntervalAlert(
 		case pomomo.ShortBreakInterval:
 			a = ShortBreakAudio
 		}
-		data := loadOpusAudio(a)
+		data := loadFn(a)
 		if data == nil {
-			return fmt.Errorf("no data for audio %d", a)
+			return fmt.Errorf("no data for audio %s", a)
 		}
-		return sendOpusAudio(ctx, data, s.Record.GuildID, s.Record.VoiceCID)
+		return sendFn(ctx, data, s.Record.GuildID, s.Record.VoiceCID)
 
 		// TODO case pomomo.SessionIdle:
 		// 	audioPlayer.Play(IdleAudio, s.Record.GuildID, s.Record.VoiceCID)
 	}
 	return nil
+}
+
+type VoiceStateAdapter interface {
+	UpdateVoiceState(gid, uid string, mute, deaf bool) error
+	GetVoiceState(gid, uid string) (pomomo.VoiceState, error)
+}
+
+func updateVoiceState(ctx context.Context, vs VoiceStateAdapter, mute, deafen bool, p models.Participant) error {
+	return vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, mute || p.Record.IsMuted, deafen || p.Record.IsDeafened)
+}
+
+func restoreVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Participant) error {
+	return vs.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened)
+}
+
+func getVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Participant) (pomomo.VoiceState, error) {
+	return vs.GetVoiceState(p.Record.GuildID, p.Record.UserID)
 }
 
 func panicif(err error) {

@@ -30,28 +30,21 @@ type ParticipantsManager interface {
 
 	Insert(context.Context, pomomo.ParticipantRecord) (models.Participant, error)
 	Delete(context.Context, pomomo.ParticipantID) error
-	UpdateVoiceState(context.Context, string, pomomo.VoiceChannelID, pomomo.VoiceState) (*models.Participant, error)
-	Get(string, pomomo.VoiceChannelID) *models.Participant
-	GetAll(pomomo.VoiceChannelID) []*models.Participant
+	UpdateVoiceState(ctx context.Context, uid string, cid pomomo.VoiceChannelID, vs pomomo.VoiceState) (models.Participant, error)
+	DetachFromChannel(context.Context, string, pomomo.VoiceChannelID) (models.Participant, error)
+	Get(string, pomomo.VoiceChannelID) models.Participant
+	GetAll(pomomo.VoiceChannelID) []models.Participant
 	GetVoiceChannelIDs() []pomomo.VoiceChannelID
 	GetParticipantID(context.Context, string) (pomomo.ParticipantID, error)
-
-	// lifecycle hooks
-
-	// AfterUpdate allows a function to be set that is called after any update.
-	// After insert, before arg is empty.
-	// After delete, curr arg is empty.
-	AfterUpdate(func(ctx context.Context, before, curr optional[models.Participant]))
 
 	// RestoreCache fetches active participants from repo; should be called after init
 	RestoreCache(context.Context) error
 }
 
 type participantsMgr struct {
-	cache       *participantsCache
-	repo        ParticipantsRepo
-	l           log.Logger
-	afterUpdate func(ctx context.Context, before, curr optional[models.Participant])
+	cache *participantsCache
+	repo  ParticipantsRepo
+	l     log.Logger
 }
 
 func NewParticipantManager(repo ParticipantsRepo, l log.Logger) ParticipantsManager {
@@ -111,8 +104,27 @@ func (c *participantsCache) get(cid pomomo.VoiceChannelID, uid string) *models.P
 	return participants[i]
 }
 
-func (pm *participantsMgr) AfterUpdate(fn func(ctx context.Context, before, curr optional[models.Participant])) {
-	pm.afterUpdate = fn
+func (pm *participantsMgr) DetachFromChannel(ctx context.Context, uid string, cid pomomo.VoiceChannelID) (models.Participant, error) {
+	pm.cache.mu.Lock()
+	defer pm.cache.mu.Unlock()
+
+	participant := pm.cache.get(cid, uid)
+	if participant == nil {
+		return models.Participant{}, fmt.Errorf("participant not found for voice channel %s, user %s", cid, uid)
+	}
+
+	update := participant.Record
+	update.VoiceCID = ""
+	updated, err := pm.repo.UpdateParticipant(ctx, participant.ID, update)
+	if err != nil {
+		return models.Participant{}, err
+	}
+	participant.Record = updated.ParticipantRecord
+
+	pm.cache.remove(cid, uid)
+	pm.cache.add(participant)
+
+	return *participant, nil
 }
 
 func (pm *participantsMgr) AcquireVoiceChannelLock(cid pomomo.VoiceChannelID) func() {
@@ -148,6 +160,7 @@ func (pm *participantsMgr) Insert(ctx context.Context, r pomomo.ParticipantRecor
 	if err := pm.cache.add(&participant); err != nil {
 		return models.Participant{}, err
 	}
+
 	return participant, nil
 }
 
@@ -186,43 +199,48 @@ func (pm *participantsMgr) Delete(ctx context.Context, id pomomo.ParticipantID) 
 	return err
 }
 
-func (pm *participantsMgr) UpdateVoiceState(ctx context.Context, uid string, cid pomomo.VoiceChannelID, vs pomomo.VoiceState) (*models.Participant, error) {
+func (pm *participantsMgr) UpdateVoiceState(ctx context.Context, uid string, cid pomomo.VoiceChannelID, vs pomomo.VoiceState) (models.Participant, error) {
 	pm.cache.mu.Lock()
 	defer pm.cache.mu.Unlock()
 
 	participant := pm.cache.get(cid, uid)
 	if participant == nil {
-		return nil, fmt.Errorf("participant not found for voice channel %s, user %s", cid, uid)
+		return models.Participant{}, fmt.Errorf("participant not found for voice channel %s, user %s", cid, uid)
 	}
 
-	participant.Record.IsMuted = vs.Mute
-	participant.Record.IsDeafened = vs.Deaf
-
-	_, err := pm.repo.UpdateParticipant(ctx, participant.ID, participant.Record)
+	newRecord := participant.Record
+	newRecord.IsMuted = vs.Mute
+	newRecord.IsDeafened = vs.Deaf
+	updated, err := pm.repo.UpdateParticipant(ctx, participant.ID, newRecord)
 	if err != nil {
-		return nil, err
+		return models.Participant{}, err
 	}
+	participant.Record = updated.ParticipantRecord
 
-	return participant, nil
+	return *participant, nil
 }
 
-func (pm *participantsMgr) Get(userID string, cid pomomo.VoiceChannelID) *models.Participant {
+func (pm *participantsMgr) Get(userID string, cid pomomo.VoiceChannelID) models.Participant {
 	pm.cache.mu.Lock()
 	defer pm.cache.mu.Unlock()
 
 	for _, p := range pm.cache.store[cid] {
 		if p.Record.UserID == userID {
-			return p
+			return *p
 		}
 	}
-	return nil
+	return models.Participant{}
 }
 
-func (pm *participantsMgr) GetAll(cid pomomo.VoiceChannelID) []*models.Participant {
+func (pm *participantsMgr) GetAll(cid pomomo.VoiceChannelID) []models.Participant {
 	pm.cache.mu.Lock()
 	defer pm.cache.mu.Unlock()
 
-	return pm.cache.store[cid]
+	var res []models.Participant
+	for _, p := range pm.cache.store[cid] {
+		res = append(res, *p)
+	}
+	return res
 }
 
 func (pm *participantsMgr) GetVoiceChannelIDs() []pomomo.VoiceChannelID {

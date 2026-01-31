@@ -40,6 +40,10 @@ func LoadConfig() (config.Config, error) {
 			Key:      ShardCountKey,
 			Required: false,
 		},
+		{
+			Key:      LogLevelKey,
+			Required: false,
+		},
 	}
 
 	cfgPath := os.Getenv("POMOMO_CONFIG_PATH")

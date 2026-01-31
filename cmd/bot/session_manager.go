@@ -44,7 +44,6 @@ type SessionManager interface {
 	StartSession(context.Context, startSessionRequest) (models.Session, error)
 	EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
-	// TogglePause(context.Context, sessionKey) (Session, error)
 	RestoreSessions(context.Context) error
 
 	//
@@ -64,12 +63,12 @@ type sessionManager struct {
 	cache     *sessionCache
 	wg        sync.WaitGroup
 	parentCtx context.Context
-	pp        ParticipantsManager
+	pm        ParticipantsManager
 
-	onUpdate func(ctx context.Context, before, curr models.Session)
+	afterUpdate func(ctx context.Context, before, curr models.Session)
 }
 
-func NewSessionManager(ctx context.Context, repo SessionRepo, tx transactor.Transactor) SessionManager {
+func NewSessionManager(ctx context.Context, repo SessionRepo, pm ParticipantsManager, tx transactor.Transactor) SessionManager {
 	cache := sessionCache{
 		sessions:         make(map[pomomo.TextChannelID]*models.Session),
 		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
@@ -81,6 +80,7 @@ func NewSessionManager(ctx context.Context, repo SessionRepo, tx transactor.Tran
 	return &sessionManager{
 		cache:     &cache,
 		repo:      repo,
+		pm:        pm,
 		tx:        tx,
 		parentCtx: ctx,
 	}
@@ -138,8 +138,8 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 			log.Error("failed ending stale session", "sessionID", s.ID, "err", err)
 			continue
 		}
-		if m.onUpdate != nil {
-			m.onUpdate(ctx, s, ended)
+		if m.afterUpdate != nil {
+			m.afterUpdate(ctx, s, ended)
 		}
 		log.Info("ended stale session", "sessionID", s.ID)
 		continue
@@ -149,8 +149,8 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 	sessionCtxs := m.cache.Add(m.parentCtx, toRestore...)
 	for i, sessionCtx := range sessionCtxs {
 		session := *toRestore[i]
-		if m.onUpdate != nil {
-			m.onUpdate(ctx, models.Session{}, session)
+		if m.afterUpdate != nil {
+			m.afterUpdate(ctx, models.Session{}, session)
 		}
 		m.startUpdateLoop(sessionCtx, session.Record.TextCID)
 	}
@@ -172,7 +172,7 @@ func (m *sessionManager) GetSession(cid pomomo.TextChannelID) (models.Session, e
 }
 
 func (m *sessionManager) AfterUpdate(handler func(ctx context.Context, before, curr models.Session)) {
-	m.onUpdate = handler
+	m.afterUpdate = handler
 }
 
 func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) error {
@@ -205,12 +205,12 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextCha
 					return
 				}
 
-				if m.onUpdate != nil {
+				if m.afterUpdate != nil {
 					// can't rely on onSessionUpdate to handle ctx timeout - if still locked, skip call
 					go func() {
 						if updateMu.TryLock() {
 							defer updateMu.Unlock()
-							m.onUpdate(ctx, before, *s)
+							m.afterUpdate(ctx, before, *s)
 						}
 					}()
 				}
@@ -258,9 +258,9 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 	sessionCtxs := m.cache.Add(m.parentCtx, &session)
 
 	// user that starts session is automatically joined as a participant
-	unlock := m.pp.AcquireVoiceChannelLock(session.Record.VoiceCID)
+	unlock := m.pm.AcquireVoiceChannelLock(session.Record.VoiceCID)
 	defer unlock()
-	_, err = m.pp.Insert(ctx, pomomo.ParticipantRecord{
+	_, err = m.pm.Insert(ctx, pomomo.ParticipantRecord{
 		SessionID:  session.ID,
 		GuildID:    session.Record.GuildID,
 		VoiceCID:   session.Record.VoiceCID,
@@ -298,8 +298,8 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 		return models.Session{}, fmt.Errorf("failed to skip interval: %w", err)
 	}
 
-	if m.onUpdate != nil {
-		m.onUpdate(ctx, before, *s)
+	if m.afterUpdate != nil {
+		m.afterUpdate(ctx, before, *s)
 	}
 	return *s, nil
 }
@@ -332,10 +332,10 @@ func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelI
 		return models.Session{}, fmt.Errorf("failed to end session: %w", err)
 	}
 
-	if m.onUpdate != nil {
-		m.onUpdate(ctx, *s, ended)
-	}
 	m.cache.Remove(cid)
+	if m.afterUpdate != nil {
+		m.afterUpdate(ctx, *s, ended)
+	}
 	return ended, nil
 }
 
