@@ -25,6 +25,19 @@ type startSessionRequest struct {
 	}
 }
 
+type SessionRepo interface {
+	InsertSession(context.Context, pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error)
+	UpdateSession(context.Context, pomomo.SessionID, pomomo.SessionRecord) (pomomo.ExistingSessionRecord, error)
+	DeleteSession(context.Context, pomomo.SessionID) (pomomo.ExistingSessionRecord, error)
+	GetSession(context.Context, pomomo.SessionID) (pomomo.ExistingSessionRecord, error)
+	GetSessionsByStatus(context.Context, ...pomomo.SessionStatus) ([]pomomo.ExistingSessionRecord, error)
+
+	// settings
+	InsertSettings(context.Context, pomomo.SessionSettingsRecord) (pomomo.ExistingSessionSettingsRecord, error)
+	GetSettings(context.Context, pomomo.SessionID) (pomomo.ExistingSessionSettingsRecord, error)
+	DeleteSettings(context.Context, pomomo.SessionID) (pomomo.ExistingSessionSettingsRecord, error)
+}
+
 type SessionManager interface {
 	HasSession(textCID string) bool
 	GetSession(cid pomomo.TextChannelID) (models.Session, error)
@@ -38,25 +51,25 @@ type SessionManager interface {
 	HasVoiceSession(voiceCID string) bool
 	GuildSessionCnt(gid string) int
 
-	// hooks
-	OnSessionUpdate(func(ctx context.Context, before, curr models.Session))
+	// lifecycle hooks
+	AfterUpdate(func(ctx context.Context, before, curr models.Session))
 
 	//
 	Shutdown() error
 }
 
 type sessionManager struct {
-	repo      pomomo.SessionRepo
+	repo      SessionRepo
 	tx        transactor.Transactor
 	cache     *sessionCache
 	wg        sync.WaitGroup
 	parentCtx context.Context
-	pp        ParticipantsProvider
+	pp        ParticipantsManager
 
 	onUpdate func(ctx context.Context, before, curr models.Session)
 }
 
-func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, pp ParticipantsProvider, tx transactor.Transactor) SessionManager {
+func NewSessionManager(ctx context.Context, repo SessionRepo, tx transactor.Transactor) SessionManager {
 	cache := sessionCache{
 		sessions:         make(map[pomomo.TextChannelID]*models.Session),
 		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
@@ -69,7 +82,6 @@ func NewSessionManager(ctx context.Context, repo pomomo.SessionRepo, pp Particip
 		cache:     &cache,
 		repo:      repo,
 		tx:        tx,
-		pp:        pp,
 		parentCtx: ctx,
 	}
 }
@@ -159,7 +171,7 @@ func (m *sessionManager) GetSession(cid pomomo.TextChannelID) (models.Session, e
 	return *s, nil
 }
 
-func (m *sessionManager) OnSessionUpdate(handler func(ctx context.Context, before, curr models.Session)) {
+func (m *sessionManager) AfterUpdate(handler func(ctx context.Context, before, curr models.Session)) {
 	m.onUpdate = handler
 }
 
@@ -248,7 +260,7 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 	// user that starts session is automatically joined as a participant
 	unlock := m.pp.AcquireVoiceChannelLock(session.Record.VoiceCID)
 	defer unlock()
-	_, err = m.pp.Insert(ctx, pomomo.SessionParticipantRecord{
+	_, err = m.pp.Insert(ctx, pomomo.ParticipantRecord{
 		SessionID:  session.ID,
 		GuildID:    session.Record.GuildID,
 		VoiceCID:   session.Record.VoiceCID,

@@ -7,9 +7,9 @@ import (
 	"github.com/benjamonnguyen/pomomo-go"
 )
 
-type SessionParticipant struct {
-	ID                pomomo.SessionParticipantID
-	Record            pomomo.SessionParticipantRecord
+type Participant struct {
+	ID                pomomo.ParticipantID
+	Record            pomomo.ParticipantRecord
 	StartedIntervalAt time.Time
 }
 

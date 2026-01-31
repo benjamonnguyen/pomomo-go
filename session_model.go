@@ -1,7 +1,6 @@
 package pomomo
 
 import (
-	"context"
 	"time"
 )
 
@@ -37,10 +36,10 @@ func (i SessionInterval) String() string {
 }
 
 type (
-	SessionID            string
-	SessionParticipantID string
-	VoiceChannelID       string
-	TextChannelID        string
+	SessionID      string
+	ParticipantID  string
+	VoiceChannelID string
+	TextChannelID  string
 )
 
 type SessionRecord struct {
@@ -64,7 +63,7 @@ type VoiceState struct {
 	Mute, Deaf bool
 }
 
-type SessionParticipantRecord struct {
+type ParticipantRecord struct {
 	SessionID           SessionID
 	GuildID             string
 	UserID              string
@@ -72,9 +71,9 @@ type SessionParticipantRecord struct {
 	IsMuted, IsDeafened bool
 }
 
-type ExistingSessionParticipantRecord struct {
-	ExistingRecord[SessionParticipantID]
-	SessionParticipantRecord
+type ExistingParticipantRecord struct {
+	ExistingRecord[ParticipantID]
+	ParticipantRecord
 }
 
 type SessionSettingsRecord struct {
@@ -92,25 +91,4 @@ type SessionSettingsRecord struct {
 type ExistingSessionSettingsRecord struct {
 	ExistingRecord[SessionID]
 	SessionSettingsRecord
-}
-
-type SessionRepo interface {
-	// TODO reconsider SessionRepo being defined here
-	InsertSession(context.Context, SessionRecord) (ExistingSessionRecord, error)
-	UpdateSession(context.Context, SessionID, SessionRecord) (ExistingSessionRecord, error)
-	DeleteSession(context.Context, SessionID) (ExistingSessionRecord, error)
-	GetSession(context.Context, SessionID) (ExistingSessionRecord, error)
-	GetSessionsByStatus(context.Context, ...SessionStatus) ([]ExistingSessionRecord, error)
-
-	// settings
-	InsertSettings(context.Context, SessionSettingsRecord) (ExistingSessionSettingsRecord, error)
-	GetSettings(context.Context, SessionID) (ExistingSessionSettingsRecord, error)
-	DeleteSettings(context.Context, SessionID) (ExistingSessionSettingsRecord, error)
-
-	// participants
-	InsertParticipant(context.Context, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
-	UpdateParticipant(context.Context, SessionParticipantID, SessionParticipantRecord) (ExistingSessionParticipantRecord, error)
-	DeleteParticipant(context.Context, SessionParticipantID) (ExistingSessionParticipantRecord, error)
-	GetAllParticipants(context.Context) ([]ExistingSessionParticipantRecord, error)
-	GetParticipantByUserID(context.Context, string) (ExistingSessionParticipantRecord, error)
 }
