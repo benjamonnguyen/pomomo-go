@@ -10,7 +10,6 @@ COPY deadsimple ../deadsimple
 
 # go mod download
 COPY pomomo-go/go.mod pomomo-go/go.sum ./
-RUN ls -l ..
 RUN go mod download
 
 COPY pomomo-go .
@@ -22,7 +21,6 @@ FROM alpine:3.21
 WORKDIR /app
 
 # Install runtime dependencies
-# RUN apk add --no-cache ca-certificates tzdata
 RUN apk add --no-cache ffmpeg
 
 # Copy binary from builder

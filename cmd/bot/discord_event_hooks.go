@@ -267,13 +267,18 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 		return true
 	}
 	if pID != "" {
-		if err := pp.Delete(ctx, pID); err != nil {
-			log.Error("failed to delete existing participant", "err", err)
-			if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
-				log.Error(err)
-			}
-			return true
+		// for simplicity will just disallow joining in this case
+		if _, err := followup(TextDisplay("You are already in a session.")); err != nil {
+			log.Error(err)
 		}
+		return true
+
+		// 	log.Error("failed to delete existing participant", "err", err)
+		// 	if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
+		// 		log.Error(err)
+		// 	}
+		// 	return true
+		// }
 	}
 
 	// Get user's current voice state

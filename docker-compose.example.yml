@@ -1,6 +1,6 @@
 services:
   pomomo-bot:
-    image: ghcr.io/benjamonnguyen/pomomo-go:latest
+    image: ghcr.io/benjamonnguyen/pomomo-bot:latest
     container_name: pomomo-bot
     restart: unless-stopped
     environment:
