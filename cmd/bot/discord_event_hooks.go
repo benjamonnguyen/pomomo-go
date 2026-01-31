@@ -14,27 +14,58 @@ const (
 	defaultErrorMsg = "Looks like something went wrong. Try again in a bit or reach out to support."
 )
 
-func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vsSvc vsSvc, pp ParticipantsManager, s *discordgo.Session, u *discordgo.VoiceStateUpdate) {
+func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vs VoiceStateAdapter, pm ParticipantsManager, s *discordgo.Session, u *discordgo.VoiceStateUpdate) bool {
 	if u.BeforeUpdate == nil {
 		// don't need to handle joins since participation is removed on leave
-		return
+		return false
 	}
 	if u.ChannelID == u.BeforeUpdate.ChannelID {
-		return
+		return false
 	}
 	cid := pomomo.VoiceChannelID(u.BeforeUpdate.ChannelID)
-	unlock := pp.AcquireVoiceChannelLock(cid)
+	unlock := pm.AcquireVoiceChannelLock(cid)
 	defer unlock()
 
-	if p := pp.Get(u.UserID, cid); p != nil {
-		if err := pp.Delete(ctx, p.ID); err != nil {
-			log.Error("failed participant delete on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
-		}
-		if err := vsSvc.UpdateVoiceState(p.Record.GuildID, p.Record.UserID, p.Record.IsMuted, p.Record.IsDeafened); err != nil {
+	if p := pm.Get(u.UserID, cid); p != (models.Participant{}) {
+		if err := restoreVoiceState(ctx, vs, p); err != nil {
 			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
+			if _, err := pm.DetachFromChannel(ctx, u.UserID, cid); err != nil {
+				log.Error("failed to detach participant from channel after failing to restore voice state", "err", err)
+			}
+			log.Debug("detached participant from voice channel", "uid", u.UserID, "sid", p.Record.SessionID)
+			return true
 		}
-		log.Debug("removed participant on voice channel leave", "uid", u.UserID, "sid", p.Record.SessionID)
+		if err := pm.Delete(ctx, p.ID); err != nil {
+			log.Error("failed participant delete on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
+		} else {
+			log.Debug("removed participant on voice channel leave", "uid", u.UserID, "sid", p.Record.SessionID)
+		}
+		return true
 	}
+	return false
+}
+
+func RestoreParticipantVoiceStateOnChannelJoin(ctx context.Context, vs VoiceStateAdapter, pm ParticipantsManager, s *discordgo.Session, u *discordgo.VoiceStateUpdate) bool {
+	if u.BeforeUpdate != nil && u.ChannelID == u.BeforeUpdate.ChannelID {
+		return false
+	}
+	unlock := pm.AcquireVoiceChannelLock("")
+	defer unlock()
+
+	// get detached participants that we failed to restore
+	if p := pm.Get(u.UserID, ""); p != (models.Participant{}) {
+		if err := restoreVoiceState(ctx, vs, p); err != nil {
+			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
+			return true
+		}
+		if err := pm.Delete(ctx, p.ID); err != nil {
+			log.Error("failed participant delete after voice state restore", "err", err, "gid", u.GuildID, "uid", u.UserID)
+		} else {
+			log.Debug("removed participant after voice state restore", "uid", u.UserID, "sid", p.Record.SessionID)
+		}
+		return true
+	}
+	return false
 }
 
 func StartSession(ctx context.Context, sessionManager SessionManager, dm DiscordMessenger, pp ParticipantsManager, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
@@ -227,7 +258,7 @@ func EndSession(ctx context.Context, sessionManager SessionManager, s *discordgo
 	return true
 }
 
-func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr VoiceStateUpdater, pp ParticipantsManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
+func JoinSession(ctx context.Context, sessionManager SessionManager, a Autoshusher, pp ParticipantsManager, dm DiscordMessenger, s *discordgo.Session, m *discordgo.InteractionCreate) bool {
 	if m.Type != discordgo.InteractionMessageComponent {
 		return false
 	}
@@ -305,7 +336,7 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 	}
 
 	// Insert participant
-	_, err = pp.Insert(ctx, pomomo.ParticipantRecord{
+	participant, err := pp.Insert(ctx, pomomo.ParticipantRecord{
 		SessionID:  session.ID,
 		GuildID:    session.Record.GuildID,
 		VoiceCID:   session.Record.VoiceCID,
@@ -321,7 +352,9 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, vsMgr Voice
 		return true
 	}
 
-	go vsMgr.AutoShush(ctx, session)
+	go func() {
+		a.Autoshush(ctx, []models.Participant{participant}, models.Session{}, session)
+	}()
 
 	_, err = followup(TextDisplay("Joined session!"))
 	if err != nil {

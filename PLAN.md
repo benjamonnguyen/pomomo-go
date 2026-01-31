@@ -1,14 +1,10 @@
-# MVP
-## refactor session_manager: extract session_provider
+- refactor session_manager: extract session_provider
+- voicestatesvc unneccessary
 
 ## bugs
 
 ## testing
 - commands.go integration tests
-
-## prelaunch
-- top.gg, support server url
-- dockerize and deploy
 
 # TODO
 - stats
