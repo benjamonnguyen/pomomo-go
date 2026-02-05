@@ -3,21 +3,21 @@ package pomomo
 import (
 	"os"
 
-	"github.com/benjamonnguyen/deadsimple/config"
-	"github.com/benjamonnguyen/deadsimple/config/env"
+	"github.com/benjamonnguyen/deadsimple/cfg"
+	"github.com/benjamonnguyen/deadsimple/cfg/env"
 	"github.com/charmbracelet/log"
 )
 
 const (
-	DatabaseURLKey config.Key = "POMOMO_DB_URL"
-	BotNameKey     config.Key = "POMOMO_BOT_NAME"
-	BotTokenKey    config.Key = "POMOMO_BOT_TOKEN"
-	ShardIDKey     config.Key = "POMOMO_SHARD_ID"
-	ShardCountKey  config.Key = "POMOMO_SHARD_COUNT"
-	LogLevelKey    config.Key = "POMOMO_LOG_LEVEL"
+	DatabaseURLKey cfg.Key = "POMOMO_DB_URL"
+	BotNameKey     cfg.Key = "POMOMO_BOT_NAME"
+	BotTokenKey    cfg.Key = "POMOMO_BOT_TOKEN"
+	ShardIDKey     cfg.Key = "POMOMO_SHARD_ID"
+	ShardCountKey  cfg.Key = "POMOMO_SHARD_COUNT"
+	LogLevelKey    cfg.Key = "POMOMO_LOG_LEVEL"
 )
 
-func LoadConfig() (config.Config, error) {
+func LoadConfig() (cfg.Config, error) {
 	entries := []env.Entry{
 		{
 			Key:      DatabaseURLKey,

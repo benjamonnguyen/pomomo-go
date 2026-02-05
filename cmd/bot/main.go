@@ -13,8 +13,8 @@ import (
 	"time"
 
 	txStdLib "github.com/Thiht/transactor/stdlib"
-	"github.com/benjamonnguyen/deadsimple/config"
-	dsdb "github.com/benjamonnguyen/deadsimple/database/sqlite"
+	"github.com/benjamonnguyen/deadsimple/cfg"
+	dsdb "github.com/benjamonnguyen/deadsimple/db/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/benjamonnguyen/pomomo-go/discordgo"
@@ -37,14 +37,14 @@ const (
 
 func main() {
 	// config
-	cfg, err := pomomo.LoadConfig()
+	conf, err := pomomo.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 	var dbURL, botToken, botName string
 	var shardID, shardCnt string
 	var logLvl string
-	panicif(cfg.GetMany([]config.Key{
+	panicif(conf.GetMany([]cfg.Key{
 		pomomo.DatabaseURLKey,
 		pomomo.BotTokenKey,
 		pomomo.BotNameKey,
