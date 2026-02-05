@@ -43,7 +43,7 @@ func main() {
 	}
 	var dbURL, botToken, botName string
 	var shardID, shardCnt string
-	var logLvl string
+	var logLvl, logFile string
 	panicif(conf.GetMany([]cfg.Key{
 		pomomo.DatabaseURLKey,
 		pomomo.BotTokenKey,
@@ -51,8 +51,9 @@ func main() {
 		pomomo.ShardIDKey,
 		pomomo.ShardCountKey,
 		pomomo.LogLevelKey,
+		pomomo.LogFileKey,
 	}, &dbURL, &botToken, &botName,
-		&shardID, &shardCnt, &logLvl))
+		&shardID, &shardCnt, &logLvl, &logFile))
 
 	// logger
 	log.SetReportCaller(true)
@@ -61,6 +62,13 @@ func main() {
 		log.Info("failed to parse log level - falling back to INFO", "err", err, "logLvl", logLvl)
 	}
 	log.SetLevel(lvl)
+	if logFile != "" {
+		f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		panicif(err)
+		log.SetOutput(f)
+	}
+
+	//
 	topCtx, topCtxC := context.WithCancel(context.Background())
 	initTimeout, initTimeoutC := context.WithTimeout(topCtx, 10*time.Second)
 

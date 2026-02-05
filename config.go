@@ -15,6 +15,7 @@ const (
 	ShardIDKey     cfg.Key = "POMOMO_SHARD_ID"
 	ShardCountKey  cfg.Key = "POMOMO_SHARD_COUNT"
 	LogLevelKey    cfg.Key = "POMOMO_LOG_LEVEL"
+	LogFileKey     cfg.Key = "POMOMO_LOG_FILE"
 )
 
 func LoadConfig() (cfg.Config, error) {
@@ -42,6 +43,10 @@ func LoadConfig() (cfg.Config, error) {
 		},
 		{
 			Key:      LogLevelKey,
+			Required: false,
+		},
+		{
+			Key:      LogFileKey,
 			Required: false,
 		},
 	}
