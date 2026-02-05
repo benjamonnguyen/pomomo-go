@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
 
-	"github.com/benjamonnguyen/deadsimple/database/sqliteutil"
+	"github.com/benjamonnguyen/deadsimple/db/sqliteutil"
 	"github.com/benjamonnguyen/pomomo-go"
 )
 

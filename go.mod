@@ -4,22 +4,25 @@ go 1.25.3
 
 require (
 	github.com/Thiht/transactor v1.1.0
-	github.com/benjamonnguyen/deadsimple/config v0.0.0
-	github.com/benjamonnguyen/deadsimple/database v0.0.0
+	github.com/benjamonnguyen/deadsimple/cfg v0.0.0
+	github.com/benjamonnguyen/deadsimple/db v0.0.0
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/charmbracelet/log v0.4.2
 	github.com/google/uuid v1.6.0
 	modernc.org/sqlite v1.39.1
 )
 
-replace github.com/benjamonnguyen/deadsimple/database v0.0.0 => ../deadsimple/database
+replace github.com/benjamonnguyen/deadsimple/db v0.0.0 => ../deadsimple/db
 
-replace github.com/benjamonnguyen/deadsimple/config v0.0.0 => ../deadsimple/config
+replace github.com/benjamonnguyen/deadsimple/cfg v0.0.0 => ../deadsimple/cfg
 
 replace github.com/bwmarrin/discordgo v0.29.0 => ../discordgo
 
+replace github.com/benjamonnguyen/deadsimple v0.0.0 => ../deadsimple
+
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
+	github.com/benjamonnguyen/deadsimple v0.0.0 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.8.0 // indirect

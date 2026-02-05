@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/benjamonnguyen/deadsimple/config"
+	"github.com/benjamonnguyen/deadsimple/cfg"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
@@ -14,12 +14,12 @@ func main() {
 	// Set global logger to debug level
 	log.SetLevel(log.DebugLevel)
 
-	cfg, err := pomomo.LoadConfig()
+	config, err := pomomo.LoadConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
 	var botToken, shardCnt, shardID string
-	panicif(cfg.GetMany([]config.Key{
+	panicif(config.GetMany([]cfg.Key{
 		pomomo.BotTokenKey,
 		pomomo.ShardCountKey,
 		pomomo.ShardIDKey,

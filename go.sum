@@ -2,10 +2,6 @@ github.com/Thiht/transactor v1.1.0 h1:+8tBw22C8a7KjVykw4BbeEmqQbEN6jzI/0YdazMPYM
 github.com/Thiht/transactor v1.1.0/go.mod h1:/ToWJvAI8rvnZKq25E7bZ3NZKUz2ONBzIKdToV8PLCE=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
-github.com/benjamonnguyen/deadsimple/config v0.1.0 h1:6aa2plXWQUDuKCPQnCoI25FBUPqr1i7TilMXOqtrFQA=
-github.com/benjamonnguyen/deadsimple/config v0.1.0/go.mod h1:xXq6YWm8NGtmx7pUxz0XTh6zg8Jw8AHeWCwj/iD4VWc=
-github.com/benjamonnguyen/deadsimple/database v0.1.0 h1:HWSiLzjd7clIl9FOO5yn9nUgH4oXk++oTNrecCbCt4g=
-github.com/benjamonnguyen/deadsimple/database v0.1.0/go.mod h1:twgIf0vD1xHup/vexJBNkQv1pbM/t5hknZ++3/YEiL8=
 github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc h1:4pZI35227imm7yK2bGPcfpFEmuY1gc2YSTShr4iJBfs=
 github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc/go.mod h1:X4/0JoqgTIPSFcRA/P6INZzIuyqdFY5rm8tb41s9okk=
 github.com/charmbracelet/lipgloss v1.1.0 h1:vYXsiLHVkK7fp74RkV7b2kq9+zDLoEU4MZoFqR/noCY=
