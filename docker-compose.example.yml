@@ -6,8 +6,11 @@ services:
     environment:
       # Override config path if needed
       - POMOMO_CONFIG_PATH=/app/.env
+      # - POMOMO_LOG_FILE=/app/bot.log
     volumes:
       # Mount your .env file (create from .env.example)
       - ./.env:/app/.env:ro
+      # Mount your log file
+      # - ./bot.log:/app/bot.log
       # Mount data directory for database persistence
       - ./data:/app/data
