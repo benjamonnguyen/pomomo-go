@@ -1,4 +1,3 @@
-// Package dgutils contains utility wrappers around github.com/bwmarrin/discordgo
 package main
 
 import (
@@ -9,101 +8,19 @@ import (
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
-	"github.com/bwmarrin/discordgo"
+	"github.com/benjamonnguyen/pomomo-go/disgo"
+	"github.com/disgoorg/disgo/discord"
 )
 
 type DiscordMessenger interface {
-	EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error)
-	Respond(it *discordgo.Interaction, wait bool, components ...discordgo.MessageComponent) (*discordgo.Message, error)
-	EditResponse(it *discordgo.Interaction, components ...discordgo.MessageComponent) (*discordgo.Message, error)
-	DeferMessageCreate(it *discordgo.Interaction, ephemeral bool) (followup, error)
-	DeferMessageUpdate(it *discordgo.Interaction) (followup, error)
+	EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discord.LayoutComponent) (*discord.Message, error)
+	Respond(it discord.Interaction, wait bool, components ...discord.LayoutComponent) (*discord.Message, error)
+	EditResponse(it discord.Interaction, components ...discord.LayoutComponent) (*discord.Message, error)
+	DeferMessageCreate(it discord.Interaction, ephemeral bool) (disgo.Followup, error)
+	DeferMessageUpdate(it discord.Interaction) (disgo.Followup, error)
 }
 
-func NewDiscordMessenger(client *discordgo.Session) DiscordMessenger {
-	return &messenger{
-		client: client,
-	}
-}
-
-type messenger struct {
-	client *discordgo.Session
-}
-
-func (m *messenger) EditChannelMessage(cID pomomo.TextChannelID, messageID string, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-	return m.client.ChannelMessageEditComplex(&discordgo.MessageEdit{
-		Channel:    string(cID),
-		ID:         messageID,
-		Flags:      discordgo.MessageFlagsIsComponentsV2,
-		Components: &components,
-	})
-}
-
-// Respond returns message only when wait == true
-func (m *messenger) Respond(it *discordgo.Interaction, wait bool, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-	if err := m.client.InteractionRespond(it, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags:      discordgo.MessageFlagsIsComponentsV2,
-			Components: components,
-		},
-	}); err != nil {
-		return nil, err
-	}
-	if wait {
-		return m.client.InteractionResponse(it)
-	}
-	return nil, nil
-}
-
-func (m *messenger) EditResponse(it *discordgo.Interaction, components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-	return m.client.InteractionResponseEdit(it, &discordgo.WebhookEdit{
-		Components: &components,
-	})
-}
-
-type followup func(components ...discordgo.MessageComponent) (*discordgo.Message, error)
-
-func (m *messenger) DeferMessageCreate(it *discordgo.Interaction, ephemeral bool) (followup, error) {
-	var flags discordgo.MessageFlags
-	if ephemeral {
-		flags |= discordgo.MessageFlagsEphemeral
-	}
-	if err := m.client.InteractionRespond(it, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Flags: flags,
-		},
-	}); err != nil {
-		return nil, err
-	}
-	return func(components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-		return m.client.FollowupMessageCreate(it, true, &discordgo.WebhookParams{
-			Components: components,
-			Flags:      discordgo.MessageFlagsIsComponentsV2,
-		})
-	}, nil
-}
-
-func (m *messenger) DeferMessageUpdate(it *discordgo.Interaction) (followup, error) {
-	if err := m.client.InteractionRespond(it, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredMessageUpdate,
-	}); err != nil {
-		return nil, err
-	}
-	return func(components ...discordgo.MessageComponent) (*discordgo.Message, error) {
-		return m.client.FollowupMessageEdit(it, it.Message.ID, &discordgo.WebhookEdit{
-			Components: &components,
-		})
-	}, nil
-}
-
-func GetUser(m *discordgo.Interaction) *discordgo.User {
-	if m.Member != nil {
-		return m.Member.User
-	}
-	return m.User
-}
+var _ DiscordMessenger = (*disgo.Messenger)(nil)
 
 type InteractionID struct {
 	Type    string
@@ -160,13 +77,8 @@ const (
 	ColorNotQuiteBlack     Color = 0x23272a
 )
 
-func (c Color) ToInt() *int {
-	i := int(c)
-	return &i
-}
-
-func TextDisplay(content string) discordgo.TextDisplay {
-	return discordgo.TextDisplay{
+func TextDisplay(content string) discord.TextDisplayComponent {
+	return discord.TextDisplayComponent{
 		Content: content,
 	}
 }
@@ -176,35 +88,35 @@ const (
 	timerBarEmptyChar  = "⡀"
 )
 
-func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
+func SessionMessageComponents(s models.Session) []discord.LayoutComponent {
 	if s.Record.Status == pomomo.SessionEnded {
-		return []discordgo.MessageComponent{
+		return []discord.LayoutComponent{
 			TextDisplay(getFarewell()),
 		}
 	}
 	// action row
 
-	actionRow := discordgo.ActionsRow{
-		Components: []discordgo.MessageComponent{
-			discordgo.Button{
+	actionRow := discord.ActionRowComponent{
+		Components: []discord.InteractiveComponent{
+			discord.ButtonComponent{
 				Label: "Join",
-				Style: discordgo.PrimaryButton,
+				Style: discord.ButtonStylePrimary,
 				CustomID: InteractionID{
 					Type:    "join",
 					TextCID: s.Record.TextCID,
 				}.ToCustomID(),
 			},
-			discordgo.Button{
+			discord.ButtonComponent{
 				Label: "End",
-				Style: discordgo.DangerButton,
+				Style: discord.ButtonStyleDanger,
 				CustomID: InteractionID{
 					Type:    "end",
 					TextCID: s.Record.TextCID,
 				}.ToCustomID(),
 			},
-			discordgo.Button{
+			discord.ButtonComponent{
 				Label: "Skip",
-				Style: discordgo.SecondaryButton,
+				Style: discord.ButtonStyleSecondary,
 				CustomID: InteractionID{
 					Type:    "skip",
 					TextCID: s.Record.TextCID,
@@ -235,17 +147,17 @@ func SessionMessageComponents(s models.Session) []discordgo.MessageComponent {
 	if s.Record.Status == pomomo.SessionPaused {
 		accentColor = ColorLightGrey
 	}
-	settingsContainer := discordgo.Container{
-		Components: []discordgo.MessageComponent{
-			discordgo.TextDisplay{
+	settingsContainer := discord.ContainerComponent{
+		Components: []discord.ContainerSubComponent{
+			discord.TextDisplayComponent{
 				Content: strings.Join(settingsTextParts, "\n"),
 			},
 		},
-		AccentColor: accentColor.ToInt(),
+		AccentColor: int(accentColor),
 	}
 
 	//
-	var components []discordgo.MessageComponent
+	var components []discord.LayoutComponent
 	if s.Greeting != "" {
 		components = append(components, TextDisplay(s.Greeting))
 	}

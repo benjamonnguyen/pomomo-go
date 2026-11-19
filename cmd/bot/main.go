@@ -17,10 +17,17 @@ import (
 	dsdb "github.com/benjamonnguyen/deadsimple/db/sqlite"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
-	"github.com/benjamonnguyen/pomomo-go/discordgo"
+	"github.com/benjamonnguyen/pomomo-go/disgo"
 	"github.com/benjamonnguyen/pomomo-go/sqlite"
-	dg "github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
+	disgoorg "github.com/disgoorg/disgo"
+	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/cache"
+	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgo/gateway"
+	"github.com/disgoorg/disgo/rest"
+	"github.com/disgoorg/disgo/voice"
+	davesession "github.com/thomas-vilte/dave-go/session"
 	_ "modernc.org/sqlite"
 )
 
@@ -94,27 +101,38 @@ func main() {
 	participantRepo := sqlite.NewParticipantRepo(dbGetter, *log.Default())
 
 	// set up discord cl
-	cl, err := dg.New("Bot " + botToken)
-	if err != nil {
-		log.Fatal(err)
+	gatewayOpts := []gateway.ConfigOpt{
+		gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildVoiceStates),
 	}
-	cl.ShouldRetryOnRateLimit = false
 	if shardCnt != "" {
 		n, err := strconv.Atoi(shardCnt)
 		panicif(err)
-		cl.ShardCount = n
+		gatewayOpts = append(gatewayOpts, gateway.WithShardCount(n))
 	}
 	if shardID != "" {
 		n, err := strconv.Atoi(shardID)
 		panicif(err)
-		cl.ShardID = n
+		gatewayOpts = append(gatewayOpts, gateway.WithShardID(n))
 	}
-	cl.Client = &http.Client{Timeout: (20 * time.Second)}
-	cl.UserAgent = fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)
-	cl.ShouldReconnectVoiceOnSessionError = true
+	cl, err := disgoorg.New(botToken,
+		bot.WithLogger(disgo.NewLogger(log.Default())), // after log output/level are set
+		bot.WithGatewayConfigOpts(gatewayOpts...),
+		bot.WithCacheConfigOpts(cache.WithCaches(cache.FlagGuilds, cache.FlagVoiceStates)),
+		bot.WithRestClientConfigOpts(
+			rest.WithHTTPClient(&http.Client{Timeout: (20 * time.Second)}),
+			rest.WithUserAgent(fmt.Sprintf("%s (%s, v%s)", botName, RepoURL, Version)),
+		),
+		// handlers block on REST/DB calls - don't stall the gateway read loop
+		bot.WithEventManagerConfigOpts(bot.WithAsyncEventsEnabled()),
+		// DAVE (E2EE) implementation; swap for golibdave.NewSession if dave-go misbehaves
+		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(davesession.CreateFunc())),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	dm := NewDiscordMessenger(cl)
-	discordAdapter := discordgo.NewDiscordAdapter(cl)
+	dm := disgo.NewMessenger(cl.Rest)
+	discordAdapter := disgo.NewAdapter(cl.Rest, cl.Caches, cl.VoiceManager)
 
 	// participant manager
 	pm := NewParticipantManager(participantRepo, tx, *log.Default())
@@ -139,7 +157,7 @@ func main() {
 				if err != nil {
 					log.Error("failed to edit discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 				}
-				if err := cl.ChannelMessageUnpin(string(curr.Record.TextCID), curr.Record.MessageID); err != nil {
+				if err := unpinMessage(cl.Rest, curr.Record.TextCID, curr.Record.MessageID); err != nil {
 					log.Error("failed to unpin discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 				}
 			})
@@ -162,10 +180,10 @@ func main() {
 
 				cnt := sessionManager.GuildSessionCnt(curr.Record.GuildID)
 				if cnt == 0 {
-					if conn := cl.VoiceConnections[string(curr.Record.GuildID)]; conn != nil {
-						if err := conn.Disconnect(); err != nil {
-							log.Error(err)
-						}
+					closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := discordAdapter.CloseVoice(closeCtx, curr.Record.GuildID); err != nil {
+						log.Error(err)
 					}
 				}
 			})
@@ -211,19 +229,23 @@ func main() {
 	})
 
 	// discord event hooks
-	cl.AddHandler(func(s *dg.Session, u *dg.VoiceStateUpdate) {
-		_ = RestoreParticipantVoiceStateOnChannelJoin(topCtx, discordAdapter, pm, s, u) ||
-			RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, s, u)
-	})
-	cl.AddHandler(func(s *dg.Session, m *dg.InteractionCreate) {
-		_ = StartSession(topCtx, sessionManager, dm, pm, s, m) ||
-			SkipInterval(topCtx, sessionManager, dm, s, m) ||
-			EndSession(topCtx, sessionManager, s, m) ||
-			JoinSession(topCtx, sessionManager, autoshusher, pm, dm, s, m)
-	})
+	cl.AddEventListeners(
+		bot.NewListenerFunc(func(u *events.GuildVoiceStateUpdate) {
+			_ = RestoreParticipantVoiceStateOnChannelJoin(topCtx, discordAdapter, pm, u) ||
+				RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, u)
+		}),
+		bot.NewListenerFunc(func(e *events.ApplicationCommandInteractionCreate) {
+			_ = StartSession(topCtx, sessionManager, dm, discordAdapter, cl.Rest, e)
+		}),
+		bot.NewListenerFunc(func(e *events.ComponentInteractionCreate) {
+			_ = SkipInterval(topCtx, sessionManager, dm, e) ||
+				EndSession(topCtx, sessionManager, dm, e) ||
+				JoinSession(topCtx, sessionManager, autoshusher, pm, dm, discordAdapter, e)
+		}),
+	)
 
 	// start up
-	if err := cl.Open(); err != nil {
+	if err := cl.OpenGateway(initTimeout); err != nil {
 		log.Fatal("Error opening connection", "err", err)
 	}
 	panicif(pm.RestoreCache(initTimeout))
@@ -255,9 +277,8 @@ func main() {
 			}
 		}
 		wg.Wait()
-		if err := cl.Close(); err != nil {
-			log.Error(err)
-		}
+		// closes voice conns, then gateway and rest
+		cl.Close(shutdownTimeout)
 		shutdownTimeoutC()
 	}()
 	<-shutdownTimeout.Done()
@@ -301,6 +322,15 @@ func playIntervalAlert(
 type VoiceStateAdapter interface {
 	UpdateVoiceState(gid, uid string, mute, deaf bool) error
 	GetVoiceState(gid, uid string) (pomomo.VoiceState, error)
+	MoveMember(gid, uid string, cid pomomo.VoiceChannelID) error
+}
+
+func unpinMessage(p MessagePinner, cid pomomo.TextChannelID, messageID string) error {
+	ids, err := disgo.ParseIDs(string(cid), messageID)
+	if err != nil {
+		return err
+	}
+	return p.UnpinMessage(ids[0], ids[1])
 }
 
 func updateVoiceState(ctx context.Context, vs VoiceStateAdapter, mute, deafen bool, p models.Participant) error {
