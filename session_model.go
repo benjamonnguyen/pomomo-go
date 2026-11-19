@@ -60,6 +60,7 @@ type ExistingSessionRecord struct {
 }
 
 type VoiceState struct {
+	ChannelID  VoiceChannelID
 	Mute, Deaf bool
 }
 

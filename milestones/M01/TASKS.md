@@ -12,10 +12,10 @@
 | --- | ------ | ---- | ------------ | ----- |
 | T04 | Done | Port `commands.go` `StartCommand` to `discord.SlashCommandCreate` | T01 | Done together with T16 (register is its only typed consumer) to keep the tree building. JSON payload verified identical (types, names, min/max) |
 | T05 | | Port component builders (`SessionMessageComponents`, `TextDisplay`, buttons, container, accent color) to disgo Components v2 | T01 | Keep `InteractionID` custom-ID format unchanged |
-| T06 | | Port `DiscordMessenger` (`EditChannelMessage`, `Respond`, `EditResponse`, `DeferMessageCreate`, `DeferMessageUpdate`) to disgo REST/interaction APIs | T02, T05 | `Respond(wait=true)` → `GetInteractionResponse` for message ID |
-| T07 | | New `disgo/` voice adapter: `UpdateVoiceState` (`Rest.UpdateMember`), `GetVoiceState` (cache) | T02 | Implements existing `VoiceStateAdapter` |
-| T08 | | Voice conn manager: one conn per guild, lazy open on first alert, `Close(guildID)`, re-open if dropped | T01 | Per-guild lock; bounded open timeout |
-| T09 | | `SendOpusAudio` on the managed conn: bounded wait for `DAVE().Ready()`, write `.dca` frames to `conn.UDP()` at 20ms ticks, speaking flag on/off | T08 | Honour ctx cancellation mid-alert |
+| T06 | Done | Port `DiscordMessenger` (`EditChannelMessage`, `Respond`, `EditResponse`, `DeferMessageCreate`, `DeferMessageUpdate`) to disgo REST/interaction APIs | T02, T05 | `disgo.Messenger` (REST-only, takes `discord.Interaction`). DeferMessageUpdate followup edits `@original` (= component's message). httptest-verified paths, response types, CV2/ephemeral flags |
+| T07 | Done | New `disgo/` voice adapter: `UpdateVoiceState` (`Rest.UpdateMember`), `GetVoiceState` (cache) | T02 | `disgo.Adapter`: `UpdateVoiceState` (`*bool` so `mute:false` is sent), `MoveMember`, `GetVoiceState` (cache; now also returns `ChannelID` — added `ChannelID` to `pomomo.VoiceState`) |
+| T08 | Done | Voice conn manager: one conn per guild, lazy open on first alert, `Close(guildID)`, re-open if dropped | T01 | Per-guild lock; reuses conn if same channel + voice gateway `StatusReady`, else close + `CreateConn` + `Open` (10s); `CloseVoice(gid)` |
+| T09 | Done | `SendOpusAudio` on the managed conn: bounded wait for `DAVE().Ready()`, write `.dca` frames to `conn.UDP()` at 20ms ticks, speaking flag on/off | T08 | Uses disgo's `AudioSender` via `SetOpusFrameProvider` (handles 20ms pacing, speaking flags, silence frames, DAVE gating) with a one-shot `frameProvider`; timeout = alert length + 10s DAVE wait. Tested with fake Manager/Conn under `-race` |
 
 # Phase 3 — Event wiring & client
 
