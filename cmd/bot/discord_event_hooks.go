@@ -53,7 +53,7 @@ func RestoreParticipantVoiceStateOnChannelJoin(ctx context.Context, vs VoiceStat
 	defer unlock()
 
 	// get detached participants that we failed to restore
-	if p := pm.Get(u.UserID, ""); p != (models.Participant{}) {
+	if p := pm.Get(u.UserID, ""); p != (models.Participant{}) && p.Record.GuildID == u.GuildID {
 		if err := restoreVoiceState(ctx, vs, p); err != nil {
 			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", u.GuildID, "uid", u.UserID)
 			return true
@@ -288,28 +288,12 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, a Autoshush
 		return true
 	}
 
-	// Check if user is already a participant in another session
-	pID, err := pp.GetParticipantID(ctx, m.Member.User.ID)
-	if err != nil {
-		log.Error("failed to check existing participant", "err", err)
-		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
+	// Check if user is already a participant; leftover records from previous sessions are replaced on insert
+	if p := pp.Get(m.Member.User.ID, session.Record.VoiceCID); p != (models.Participant{}) {
+		if _, err := followup(TextDisplay("You are already in this session.")); err != nil {
 			log.Error(err)
 		}
 		return true
-	}
-	if pID != "" {
-		// for simplicity will just disallow joining in this case
-		if _, err := followup(TextDisplay("You are already in a session.")); err != nil {
-			log.Error(err)
-		}
-		return true
-
-		// 	log.Error("failed to delete existing participant", "err", err)
-		// 	if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
-		// 		log.Error(err)
-		// 	}
-		// 	return true
-		// }
 	}
 
 	// Get user's current voice state

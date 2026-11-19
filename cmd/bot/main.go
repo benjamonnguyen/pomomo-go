@@ -117,7 +117,7 @@ func main() {
 	discordAdapter := discordgo.NewDiscordAdapter(cl)
 
 	// participant manager
-	pm := NewParticipantManager(participantRepo, *log.Default())
+	pm := NewParticipantManager(participantRepo, tx, *log.Default())
 
 	// audio
 	opusAudioLoader := newOpusAudioLoader(sounds)
@@ -180,8 +180,9 @@ func main() {
 		// end empty session
 		if len(participants) == 0 {
 			// start go routine so that we don't get deadlocked from a recursive trigger
+			// use topCtx since ending the session cancels the session ctx, which would fail participant cleanup
 			go func() {
-				_, err := sessionManager.EndSession(ctx, curr.Record.TextCID)
+				_, err := sessionManager.EndSession(topCtx, curr.Record.TextCID)
 				if err != nil {
 					log.Error("failed to end empty session", "sid", curr.ID, "err", err)
 					return

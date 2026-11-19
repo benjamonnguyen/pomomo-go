@@ -162,15 +162,15 @@ func (r *participantRepo) GetAllParticipants(ctx context.Context) ([]pomomo.Exis
 	return participants, nil
 }
 
-func (r *participantRepo) GetParticipantByUserID(ctx context.Context, userID string) (pomomo.ExistingParticipantRecord, error) {
-	if userID == "" {
-		return pomomo.ExistingParticipantRecord{}, fmt.Errorf("provide userID")
+func (r *participantRepo) GetParticipantByUser(ctx context.Context, guildID, userID string) (pomomo.ExistingParticipantRecord, error) {
+	if guildID == "" || userID == "" {
+		return pomomo.ExistingParticipantRecord{}, fmt.Errorf("provide guildID and userID")
 	}
 
 	db := r.dbGetter(ctx)
 	row := db.QueryRowContext(
 		ctx,
-		fmt.Sprintf("%s WHERE user_id=?", SelectAllParticipants), userID,
+		fmt.Sprintf("%s WHERE guild_id=? AND user_id=?", SelectAllParticipants), guildID, userID,
 	)
 
 	return extractParticipant(row)

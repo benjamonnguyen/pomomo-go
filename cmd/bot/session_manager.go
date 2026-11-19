@@ -139,7 +139,8 @@ func (m *sessionManager) RestoreSessions(ctx context.Context) error {
 			continue
 		}
 		if m.afterUpdate != nil {
-			m.afterUpdate(ctx, s, ended)
+			// parentCtx since participant cleanup can outlast the init timeout
+			m.afterUpdate(m.parentCtx, s, ended)
 		}
 		log.Info("ended stale session", "sessionID", s.ID)
 		continue

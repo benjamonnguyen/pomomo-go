@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Thiht/transactor"
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/benjamonnguyen/pomomo-go/sqlite"
@@ -18,7 +19,7 @@ type ParticipantsRepo interface {
 	UpdateParticipant(context.Context, pomomo.ParticipantID, pomomo.ParticipantRecord) (pomomo.ExistingParticipantRecord, error)
 	DeleteParticipant(context.Context, pomomo.ParticipantID) (pomomo.ExistingParticipantRecord, error)
 	GetAllParticipants(context.Context) ([]pomomo.ExistingParticipantRecord, error)
-	GetParticipantByUserID(context.Context, string) (pomomo.ExistingParticipantRecord, error)
+	GetParticipantByUser(ctx context.Context, guildID, userID string) (pomomo.ExistingParticipantRecord, error)
 }
 
 // ParticipantsManager adds caching and event hooks on top PartcipantsRepo
@@ -35,7 +36,6 @@ type ParticipantsManager interface {
 	Get(string, pomomo.VoiceChannelID) models.Participant
 	GetAll(pomomo.VoiceChannelID) []models.Participant
 	GetVoiceChannelIDs() []pomomo.VoiceChannelID
-	GetParticipantID(context.Context, string) (pomomo.ParticipantID, error)
 
 	// RestoreCache fetches active participants from repo; should be called after init
 	RestoreCache(context.Context) error
@@ -44,16 +44,18 @@ type ParticipantsManager interface {
 type participantsMgr struct {
 	cache *participantsCache
 	repo  ParticipantsRepo
+	tx    transactor.Transactor
 	l     log.Logger
 }
 
-func NewParticipantManager(repo ParticipantsRepo, l log.Logger) ParticipantsManager {
+func NewParticipantManager(repo ParticipantsRepo, tx transactor.Transactor, l log.Logger) ParticipantsManager {
 	return &participantsMgr{
 		cache: &participantsCache{
 			store: make(map[pomomo.VoiceChannelID][]*models.Participant),
 			locks: make(map[pomomo.VoiceChannelID]*sync.Mutex),
 		},
 		repo: repo,
+		tx:   tx,
 		l:    l,
 	}
 }
@@ -146,9 +148,36 @@ func (pm *participantsMgr) Insert(ctx context.Context, r pomomo.ParticipantRecor
 	pm.cache.mu.Lock()
 	defer pm.cache.mu.Unlock()
 
-	existingRecord, err := pm.repo.InsertParticipant(ctx, r)
+	var existingRecord pomomo.ExistingParticipantRecord
+	var stale *pomomo.ExistingParticipantRecord
+	err := pm.tx.WithinTransaction(ctx, func(ctx context.Context) error {
+		existing, err := pm.repo.GetParticipantByUser(ctx, r.GuildID, r.UserID)
+		switch {
+		case err == sqlite.ErrNotFound:
+		case err != nil:
+			return err
+		case existing.SessionID == r.SessionID:
+			return fmt.Errorf("user %s is already a participant of session %s", r.UserID, r.SessionID)
+		default:
+			// Leftover from a previous session (one session per guild), e.g. a participant
+			// detached because their voice state couldn't be restored. Replace it, carrying
+			// over the original voice state so it's still restored when this session ends.
+			if _, err := pm.repo.DeleteParticipant(ctx, existing.ID); err != nil {
+				return err
+			}
+			r.IsMuted, r.IsDeafened = existing.IsMuted, existing.IsDeafened
+			stale = &existing
+		}
+
+		existingRecord, err = pm.repo.InsertParticipant(ctx, r)
+		return err
+	})
 	if err != nil {
 		return models.Participant{}, err
+	}
+	if stale != nil {
+		pm.l.Info("replaced stale participant", "uid", r.UserID, "gid", r.GuildID, "staleSid", stale.SessionID, "sid", r.SessionID)
+		_, _ = pm.cache.remove(stale.VoiceCID, stale.UserID) // may not be cached
 	}
 
 	participant := models.Participant{
@@ -252,15 +281,4 @@ func (pm *participantsMgr) GetVoiceChannelIDs() []pomomo.VoiceChannelID {
 		res = append(res, cid)
 	}
 	return res
-}
-
-func (pm *participantsMgr) GetParticipantID(ctx context.Context, userID string) (pomomo.ParticipantID, error) {
-	p, err := pm.repo.GetParticipantByUserID(ctx, userID)
-	if err != nil {
-		if err == sqlite.ErrNotFound {
-			return "", nil
-		}
-		return "", err
-	}
-	return p.ID, nil
 }
