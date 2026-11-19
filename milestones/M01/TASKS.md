@@ -3,7 +3,7 @@
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
 | T01 | Done | Add disgo v0.20.0, `disgoorg/snowflake/v2`, `thomas-vilte/dave-go` (exact versions) to `go.mod` | | disgo v0.20.0, snowflake v2.0.3, dave-go v0.5.1 (+ mls-go v1.6.0); godave resolves to v0.3.0 and dave-go's session compiles against it. `go` directive bumped 1.25.3 → 1.26.0 (dave-go requirement) — Dockerfile builder image must be bumped in T18. Deps are `// indirect` until imported; don't `go mod tidy` before T17 |
-| T02 | | Snowflake ↔ string helpers for `pomomo.*ID` / guild / user / message IDs | T01 | Adapter-only; return errors on parse failure, no panics |
+| T02 | Done | Snowflake ↔ string helpers for `pomomo.*ID` / guild / user / message IDs | T01 | `disgo/ids.go`: generic `ParseID[T ~string]`, `ParseIDs`, `FormatID[T]`; errors on empty/invalid, with tests |
 | T03 | | slog bridge: disgo logger → charmbracelet/log with level mapping | T01 | Check no double timestamps in `bot.log` |
 
 # Phase 2 — Adapters on disgo types
