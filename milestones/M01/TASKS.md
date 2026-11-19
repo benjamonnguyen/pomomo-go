@@ -10,7 +10,7 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T04 | | Port `commands.go` `StartCommand` to `discord.SlashCommandCreate` | T01 | Same option names, min/max values |
+| T04 | Done | Port `commands.go` `StartCommand` to `discord.SlashCommandCreate` | T01 | Done together with T16 (register is its only typed consumer) to keep the tree building. JSON payload verified identical (types, names, min/max) |
 | T05 | | Port component builders (`SessionMessageComponents`, `TextDisplay`, buttons, container, accent color) to disgo Components v2 | T01 | Keep `InteractionID` custom-ID format unchanged |
 | T06 | | Port `DiscordMessenger` (`EditChannelMessage`, `Respond`, `EditResponse`, `DeferMessageCreate`, `DeferMessageUpdate`) to disgo REST/interaction APIs | T02, T05 | `Respond(wait=true)` → `GetInteractionResponse` for message ID |
 | T07 | | New `disgo/` voice adapter: `UpdateVoiceState` (`Rest.UpdateMember`), `GetVoiceState` (cache) | T02 | Implements existing `VoiceStateAdapter` |
@@ -27,7 +27,7 @@
 | T13 | | `main.go`: build disgo client (intents Guilds + GuildVoiceStates, cache flags, shard ID/count, HTTP timeout, user agent, logger, `voice.WithDaveSessionCreateFunc(dave-go)`), register listeners | T03, T09–T12 | DAVE impl set in exactly one place |
 | T14 | | `main.go` session-end path: unpin via REST, close guild voice conn when session count hits 0 | T08, T13 | Replaces `cl.VoiceConnections[...].Disconnect()` |
 | T15 | | Shutdown ordering: voice-state restores → close voice conns → `client.Close(ctx)` within 10s | T13, T14 | |
-| T16 | | Port `cmd/register` to disgo REST bulk overwrite (no gateway) | T04 | |
+| T16 | Done | Port `cmd/register` to disgo REST bulk overwrite (no gateway) | T04 | `rest.New` + `GetCurrentApplication` + `SetGlobalCommands`; shard config no longer read. Not yet run against Discord |
 
 # Phase 4 — Cleanup & build
 

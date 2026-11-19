@@ -1,7 +1,7 @@
 package pomomo
 
 import (
-	"github.com/bwmarrin/discordgo"
+	"github.com/disgoorg/disgo/discord"
 )
 
 const (
@@ -13,49 +13,43 @@ const (
 	NoMuteOption     = "no_mute"
 )
 
-func float64Ptr(f float64) *float64 {
-	return &f
+func intPtr(i int) *int {
+	return &i
 }
 
-var StartCommand = discordgo.ApplicationCommand{
+var StartCommand = discord.SlashCommandCreate{
 	Name:        "start",
 	Description: "start pomodoro session",
-	Options: []*discordgo.ApplicationCommandOption{
-		{
-			Type:        discordgo.ApplicationCommandOptionInteger,
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionInt{
 			Name:        PomodoroOption,
 			Description: "pomodoro duration in minutes (Default: 20)",
-			MinValue:    float64Ptr(0),
-			MaxValue:    240,
+			MinValue:    intPtr(0),
+			MaxValue:    intPtr(240),
 		},
-		{
-			Type:        discordgo.ApplicationCommandOptionInteger,
+		discord.ApplicationCommandOptionInt{
 			Name:        ShortBreakOption,
 			Description: "short break duration in minutes (Default: 5)",
-			MinValue:    float64Ptr(0),
-			MaxValue:    240,
+			MinValue:    intPtr(0),
+			MaxValue:    intPtr(240),
 		},
-		{
-			Type:        discordgo.ApplicationCommandOptionInteger,
+		discord.ApplicationCommandOptionInt{
 			Name:        LongBreakOption,
 			Description: "long break duration in minutes (Default: 15)",
-			MinValue:    float64Ptr(0),
-			MaxValue:    240,
+			MinValue:    intPtr(0),
+			MaxValue:    intPtr(240),
 		},
-		{
-			Type:        discordgo.ApplicationCommandOptionInteger,
+		discord.ApplicationCommandOptionInt{
 			Name:        IntervalsOption,
 			Description: "number of intervals between long breaks (Default: 4)",
-			MinValue:    float64Ptr(1),
-			MaxValue:    20,
+			MinValue:    intPtr(1),
+			MaxValue:    intPtr(20),
 		},
-		{
-			Type:        discordgo.ApplicationCommandOptionBoolean,
+		discord.ApplicationCommandOptionBool{
 			Name:        NoDeafenOption,
 			Description: "participants will not be deafened during pomodoro intervals (Default: false)",
 		},
-		{
-			Type:        discordgo.ApplicationCommandOptionBoolean,
+		discord.ApplicationCommandOptionBool{
 			Name:        NoMuteOption,
 			Description: "participants will not be muted during pomodoro intervals (Default: false)",
 		},

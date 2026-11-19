@@ -1,13 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"strconv"
+	"time"
 
 	"github.com/benjamonnguyen/deadsimple/cfg"
 	"github.com/benjamonnguyen/pomomo-go"
-	"github.com/bwmarrin/discordgo"
 	"github.com/charmbracelet/log"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/rest"
 )
 
 func main() {
@@ -18,47 +20,35 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var botToken, shardCnt, shardID string
+	var botToken string
 	panicif(config.GetMany([]cfg.Key{
 		pomomo.BotTokenKey,
-		pomomo.ShardCountKey,
-		pomomo.ShardIDKey,
-	}, &botToken, &shardCnt, &shardID))
+	}, &botToken))
 
-	bot, err := discordgo.New("Bot " + botToken)
+	// commands are registered over REST, no gateway connection needed
+	client := rest.New(rest.NewClient(botToken))
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		client.Close(ctx)
+	}()
+
+	app, err := client.GetCurrentApplication()
 	if err != nil {
-		log.Fatal(err)
-	}
-	if shardCnt != "" {
-		n, err := strconv.Atoi(shardCnt)
-		panicif(err)
-		bot.ShardCount = n
-	}
-	if shardID != "" {
-		n, err := strconv.Atoi(shardID)
-		panicif(err)
-		bot.ShardID = n
+		log.Fatal("failed getting application", "err", err)
 	}
 
-	// Open a connection
-	if err := bot.Open(); err != nil {
-		log.Fatal("failed opening connection", "err", err)
-	}
-	defer bot.Close() //nolint
-
-	app, _ := bot.Application("@me")
-
-	cmds := []*discordgo.ApplicationCommand{
-		&pomomo.StartCommand,
+	cmds := []discord.ApplicationCommandCreate{
+		pomomo.StartCommand,
 	}
 
-	created, err := bot.ApplicationCommandBulkOverwrite(app.ID, "", cmds)
+	created, err := client.SetGlobalCommands(app.ID, cmds)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, cmd := range created {
-		fmt.Printf("%s: %s\n", cmd.Name, cmd.Description)
+		fmt.Printf("%s: %s\n", cmd.Name(), cmd.ID())
 	}
 }
 
