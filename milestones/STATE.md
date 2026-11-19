@@ -1,7 +1,7 @@
 # State
 
 **Current milestone:** M01 — Migrate from discordgo to disgo
-**Position:** Plan finalized; `milestones/M01/TASKS.md` generated (T01–T19, 4 phases). Next: execute Phase 1.
+**Position:** Phase 1 (T01–T03) done. Next: Phase 2 (T04–T09, adapters on disgo types).
 
 ## Decisions
 
@@ -11,6 +11,8 @@
 - Image built locally from the parent dir and pushed manually; `../discordgo` dropped from the build.
 - One voice conn per guild for the session's lifetime (not per alert).
 - Verify with a single dev bot (`.env.dev`); no multi-shard testing.
+- Pinned: disgo v0.20.0, snowflake v2.0.3, dave-go v0.5.1 (godave v0.3.0, mls-go v1.6.0). `go` directive now 1.26.0 → Dockerfile builder image bump in T18.
+- New adapter package `disgo/` (package `disgo`; import disgoorg's module under an alias where both are needed).
 
 ## Blockers
 
