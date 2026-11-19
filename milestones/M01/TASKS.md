@@ -33,6 +33,6 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T17 | | Remove discordgo: `discordgo/` package, `cmd/bot/discordgo.go`, `replace ../discordgo`, `go mod tidy`; `go build` + `go vet` clean | T13–T16 | |
-| T18 | | Dockerfile: drop `COPY discordgo ../discordgo`, keep Alpine + `CGO_ENABLED=0`; local `docker build` from parent dir succeeds | T17 | |
-| T19 | | Write `milestones/M01/FOLLOWUP-01.md` with verification steps and golibdave fallback procedure | T18 | |
+| T17 | Done | Remove discordgo: `discordgo/` package, `cmd/bot/discordgo.go`, `replace ../discordgo`, `go mod tidy`; `go build` + `go vet` clean | T13–T16 | Deleted `discordgo/`; dropped require + `replace ../discordgo`; `go mod tidy` (disgo/godave/omit/snowflake/dave-go now direct). Build, vet, `-race` tests clean; `CGO_ENABLED=0` binary is static |
+| T18 | Done | Dockerfile: drop `COPY discordgo ../discordgo`, keep Alpine + `CGO_ENABLED=0`; local `docker build` from parent dir succeeds | T17 | Dropped `COPY discordgo`; builder `golang:1.26-alpine` (go directive 1.26.0); explicit `CGO_ENABLED=0`. Local `docker build` OK from a minimal context (pomomo-go + deadsimple): linux/amd64, 158MB, boots to config load |
+| T19 | Done | Write `milestones/M01/FOLLOWUP-01.md` with verification steps and golibdave fallback procedure | T18 | See `FOLLOWUP-01.md` |

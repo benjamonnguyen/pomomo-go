@@ -1,11 +1,10 @@
 # Build stage
-FROM golang:1.25.3-alpine AS build
+FROM golang:1.26-alpine AS build
 LABEL org.opencontainers.image.source=https://github.com/benjamonnguyen/pomomo-go
 
 WORKDIR /app
 
 # Copy replace packages
-COPY discordgo ../discordgo
 COPY deadsimple ../deadsimple
 
 # go mod download
@@ -13,7 +12,8 @@ COPY pomomo-go/go.mod pomomo-go/go.sum ./
 RUN go mod download
 
 COPY pomomo-go .
-RUN go build -o /app/bot ./cmd/bot
+# pure-Go DAVE (dave-go) - no cgo needed; switching to golibdave requires a glibc (Debian) image
+RUN CGO_ENABLED=0 go build -o /app/bot ./cmd/bot
 
 # Final stage
 FROM alpine:3.21
