@@ -1,13 +1,13 @@
 # State
 
 **Current milestone:** M01 — Migrate from discordgo to disgo
-**Position:** All phases (T01–T19) implemented and **deployed to prod 2026-11-19 19:39 (starling.lan, both shards)** at the user's request, skipping dev verification. Both shards connected and restored cleanly; no interactions observed yet. Next: watch prod logs / run FOLLOWUP-01 checks in prod (V03, V06, V18 first).
+**Position:** M01 deployed to prod on 2026-11-19 19:39. The triage fixes were deployed on 2026-11-20 19:31 (starling.lan, both shards), without dev verification. Both shards came up cleanly with 0 sessions to restore. Next: watch prod logs and run the FOLLOWUP-01 checks in prod (V03, V06, V15–V18).
 
 ## Deploy / rollback
 
-- Image: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m01-disgo` (sha256:fc892ef91bf0…, local id; starling container image b304a023a2fa…).
-- Rollback image on starling: `ghcr.io/benjamonnguyen/pomomo-bot:pre-m01` (02e698df90b5, discordgo build from 2026-02-05). Rollback: `docker tag …:pre-m01 …:latest && docker compose up -d` in `~/stacks/pomomo-bot` (no `pull`).
-- DB backups taken right before deploy: `~/stacks/pomomo-bot/backups/bot{0,1}-2026-11-19-1938-pre-m01.db`. No schema changes in M01.
+- Running: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m01-fixes-2026-11-20` (digest sha256:45ec3168ffdb…), built from `main` @ `1999914e`.
+- Rollback options on starling: `:m01-disgo` (b304a023a2fa, the M01 build without the fixes) or `:pre-m01` (02e698df90b5, discordgo). To roll back: `docker tag …:<tag> …:latest && docker compose up -d` in `~/stacks/pomomo-bot`. Don't `pull`, or `:latest` comes back from ghcr.
+- DB backups: `backups/*-2026-11-20-1931-pre-m01-fixes.db` (taken with the bots stopped) and `backups/bot{0,1}-2026-11-19-1938-pre-m01.db`. No schema changes.
 
 ## Decisions
 
@@ -29,7 +29,7 @@
 ## Prod triage (report for 2026-11-19 UTC)
 
 - Errors before the 19:39 deploy come from the old discordgo build (line numbers match `3626910`): UNIQUE on original participant, shutdown timeout, EndSession "not found". The stale-participant fix covers the UNIQUE error.
-- Fixes on the M01 build. All are done and none are deployed. Build, vet, and `go test -race ./...` pass.
+- Fixes on the M01 build. All are done and deployed on 2026-11-20. Build, vet, and `go test -race ./...` pass.
   - `nnlxrqnr`: the sender now gates DAVE audio on `ShouldHoldFrames` instead of `Ready()`.
   - `uultvtvk`: `Shutdown()` unlocks `cacheMu` before `wg.Wait()`. The update loop checks `ctx.Err()` before each tick.
   - `umznrpom`: `sessionCache.Get` no longer waits on a session lock while holding `cacheMu`, and it re-checks the cache once it has the lock. `Remove` now releases the session lock. Before this, a tick racing `EndSession`, or a Join press during `/start`, could deadlock the whole cache. A temporary race test hung on the old code and passed on the new code. This may explain the ungraceful recreate at 20:37.
@@ -37,7 +37,12 @@
   - To verify in dev or prod: V03, V06, V15, V16, V17 in FOLLOWUP-01.
 - Unexplained ops events: a double start at 20:27 and an ungraceful recreate at 20:37. Check `docker logs` (panics go to stderr, not the log file) and `journalctl -u docker` on starling.
 
+## Prod report 2026-11-22 (assessed 2026-11-23, no fixes yet)
+
+- bot0 spike (3698× `main.go:217` 50001, plus 10004 at `autoshush.go:36`): session `8513f4a5` is orphaned. The bot most likely lost the guild or channel, so no leave events arrive, the participants are never removed, and the session never goes empty. Check whether it is still running and end it in the DB if so. A restart alone won't help, because `RestoreSessions` resumes it.
+- Proposed fixes: (1) end sessions on `GuildLeave` and on terminal edit errors (10003/10004/10008; 50001 after N consecutive ticks); (2) drop participants whose voice state is missing at `autoshush.go:60`; (3) `JoinSession` answers "join a voice channel first" when the user isn't in voice, at Debug log level; (4) `hooks.go:76` returns early when `after == ""`, and `hooks.go:47` detaches without restoring on disconnect; (5) log `channelID` as TextCID at `main.go:160/217`.
+
 ## Context
 
-- jj stack: M01 through T17–T19 is on `main` and deployed. Above it: prod triage → DAVE fix → shutdown fix → cache lock fix → starter-insert fix (`@`). None of these are deployed.
+- jj stack: M01 through T17–T19 is on `main` and deployed. Above it: prod triage → DAVE fix → shutdown fix → cache lock fix → starter-insert fix (`@`). All pushed to `origin/main` and deployed.
 - Local test image `pomomo-bot:m01-test` exists (not pushed); safe to `docker rmi`.
