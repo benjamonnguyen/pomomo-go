@@ -267,3 +267,26 @@ func TestSendOpusAudioCtxCancelWhileDaveNotReady(t *testing.T) {
 		t.Fatalf("expected ctx deadline while DAVE not ready, got %v", err)
 	}
 }
+
+func TestDaveSessionReady(t *testing.T) {
+	s := DaveSessionCreateFunc()(slog.New(slog.DiscardHandler), "1", godave.Callbacks(nil))
+	defer s.Close() //nolint
+
+	// no E2EE on the channel: dave-go's own Ready would stay false forever
+	s.OnSelectProtocolAck(0)
+	if !s.Ready() {
+		t.Fatal("want ready on protocol version 0")
+	}
+	if v := daveProtocolVersion(s); v != 0 {
+		t.Fatalf("got protocol version %d, want 0", v)
+	}
+
+	// E2EE negotiated but no epoch yet: hold frames
+	s.OnSelectProtocolAck(1)
+	if s.Ready() {
+		t.Fatal("want not ready during handshake")
+	}
+	if v := daveProtocolVersion(noopDave()); v != -1 {
+		t.Fatalf("got protocol version %d for noop session, want -1", v)
+	}
+}

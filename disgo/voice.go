@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -12,8 +13,10 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/disgo/voice"
+	"github.com/disgoorg/godave"
 	"github.com/disgoorg/omit"
 	"github.com/disgoorg/snowflake/v2"
+	davesession "github.com/thomas-vilte/dave-go/session"
 )
 
 const (
@@ -130,8 +133,29 @@ func (a *Adapter) SendOpusAudio(ctx context.Context, packets [][]byte, gID strin
 		return ctx.Err()
 	case <-t.C:
 		p.Close()
-		return fmt.Errorf("timeout playing audio, dave ready: %t", conn.DAVE().Ready())
+		return fmt.Errorf("timeout playing audio, dave ready: %t, dave protocol version: %d", conn.DAVE().Ready(), daveProtocolVersion(conn.DAVE()))
 	}
+}
+
+// DaveSessionCreateFunc creates dave-go sessions for the voice manager.
+// The audio sender gates on Ready, but dave-go's Ready stays false forever on channels
+// without E2EE (protocol version 0), so Ready reports whether frames can be sent instead.
+func DaveSessionCreateFunc() godave.SessionCreateFunc {
+	return func(l *slog.Logger, uid godave.UserID, cb godave.Callbacks) godave.Session {
+		return daveSession{davesession.New(uid, cb, davesession.WithLogger(l))}
+	}
+}
+
+type daveSession struct{ *davesession.Session }
+
+func (s daveSession) Ready() bool { return !s.ShouldHoldFrames() }
+
+// daveProtocolVersion returns the session's negotiated DAVE protocol version, or -1 if unknown.
+func daveProtocolVersion(s godave.Session) int {
+	if ds, ok := s.(daveSession); ok {
+		return int(ds.State().ProtocolVersion)
+	}
+	return -1
 }
 
 // conn returns a ready voice connection to channel cid, (re)opening it if needed. Caller holds the guild lock.

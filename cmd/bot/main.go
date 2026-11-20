@@ -27,7 +27,6 @@ import (
 	"github.com/disgoorg/disgo/gateway"
 	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/disgo/voice"
-	davesession "github.com/thomas-vilte/dave-go/session"
 	_ "modernc.org/sqlite"
 )
 
@@ -125,7 +124,7 @@ func main() {
 		// handlers block on REST/DB calls - don't stall the gateway read loop
 		bot.WithEventManagerConfigOpts(bot.WithAsyncEventsEnabled()),
 		// DAVE (E2EE) implementation; swap for golibdave.NewSession if dave-go misbehaves
-		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(davesession.CreateFunc())),
+		bot.WithVoiceManagerConfigOpts(voice.WithDaveSessionCreateFunc(disgo.DaveSessionCreateFunc())),
 	)
 	if err != nil {
 		log.Fatal(err)
