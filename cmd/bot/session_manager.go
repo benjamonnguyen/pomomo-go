@@ -394,11 +394,13 @@ func (c *sessionCache) Add(ctx context.Context, sessions ...*models.Session) []c
 }
 
 func (c *sessionCache) Remove(cid pomomo.TextChannelID) {
-	s, _ := c.Get(cid)
+	s, unlock := c.Get(cid)
 	if s == nil {
 		log.Debug("session not found in cache", "textCID", cid)
 		return
 	}
+	// waiters re-check the cache after acquiring the lock
+	defer unlock()
 
 	c.cacheMu.Lock()
 	defer c.cacheMu.Unlock()
@@ -412,17 +414,24 @@ func (c *sessionCache) Remove(cid pomomo.TextChannelID) {
 }
 
 func (c *sessionCache) Get(cid pomomo.TextChannelID) (*models.Session, func()) {
-	c.cacheMu.Lock()
-	defer c.cacheMu.Unlock()
-
-	_, exists := c.locks[cid] // checks locks instead of sessions in case of Hold()
+	c.cacheMu.RLock()
+	l, exists := c.locks[cid] // checks locks instead of sessions in case of Hold()
+	c.cacheMu.RUnlock()
 	if !exists {
 		return nil, nil
 	}
 
-	l := c.locks[cid]
+	// don't hold cacheMu while waiting, the lock holder may need it
 	l.Lock()
-	return c.sessions[cid], l.Unlock
+	c.cacheMu.RLock()
+	defer c.cacheMu.RUnlock()
+	s := c.sessions[cid]
+	if s == nil || c.locks[cid] != l {
+		// removed or released from Hold() while waiting
+		l.Unlock()
+		return nil, nil
+	}
+	return s, l.Unlock
 }
 
 func (c *sessionCache) Has(cid pomomo.TextChannelID) bool {
@@ -435,11 +444,12 @@ func (c *sessionCache) Has(cid pomomo.TextChannelID) bool {
 
 func (c *sessionCache) Hold(cid pomomo.TextChannelID) func() {
 	c.cacheMu.Lock()
-	defer c.cacheMu.Unlock()
 	if l := c.locks[cid]; l != nil {
+		c.cacheMu.Unlock()
 		l.Lock()
 		return l.Unlock
 	}
+	defer c.cacheMu.Unlock()
 
 	mu := &sync.Mutex{}
 	mu.Lock()
