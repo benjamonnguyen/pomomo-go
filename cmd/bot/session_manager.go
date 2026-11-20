@@ -192,6 +192,10 @@ func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextCha
 		var updateMu sync.Mutex
 		ticker := time.NewTicker(updateTickRate)
 		for {
+			// select may pick a pending tick over ctx.Done
+			if ctx.Err() != nil {
+				return
+			}
 			func() {
 				s, unlock := m.cache.Get(cid)
 				defer unlock()
@@ -345,6 +349,8 @@ func (m *sessionManager) Shutdown() error {
 	for _, c := range m.cache.cancelFuncs {
 		c()
 	}
+	// update loops need cacheMu to exit
+	m.cache.cacheMu.Unlock()
 
 	// Wait for all timer goroutines to exit
 	m.wg.Wait()

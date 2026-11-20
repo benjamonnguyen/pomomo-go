@@ -29,11 +29,13 @@
 ## Prod triage (report for 2026-11-19 UTC)
 
 - Errors before the 19:39 deploy come from the old discordgo build (line numbers match `3626910`): UNIQUE on original participant, shutdown timeout, EndSession "not found". The stale-participant fix covers the UNIQUE error.
-- Open on the M01 build: alert `dave ready: false` (sender gates on `Ready()`, which stays false forever when the DAVE protocol version is 0), a `Shutdown()` deadlock risk (it holds `cacheMu` across `wg.Wait()`), and a silent empty-session auto-end when inserting the starter fails.
+- Fixes on the M01 build (not deployed yet):
+  - Done: `dave ready: false`. The sender now gates on `ShouldHoldFrames` (`nnlxrqnr`, with a test).
+  - In progress in `@` (`uultvtvk`): the `Shutdown()` deadlock. It now unlocks `cacheMu` before `wg.Wait()`, and the update loop checks `ctx.Err()` before each tick. It builds and tests pass.
+  - Not started: the silent empty-session auto-end when inserting the starter fails.
 - Unexplained ops events: a double start at 20:27 and an ungraceful recreate at 20:37. Check `docker logs` (panics go to stderr, not the log file) and `journalctl -u docker` on starling.
 
 ## Context
 
-- jj stack (oldest → newest): stale-participant fix → M01 plan → T01 → T02 → T03 → T04+T16 → T06 → T07–T09 → T05,T10–T15 cutover → T17–T19. Not pushed or deployed.
-- Prod (starling.lan) remains on discordgo until M01 deploys; gateway deadlocks may still need manual restarts.
+- jj stack: M01 through T17–T19 is on `main` and deployed. Above it: prod triage → DAVE fix → shutdown fix (`@`). Those three are not deployed.
 - Local test image `pomomo-bot:m01-test` exists (not pushed); safe to `docker rmi`.
