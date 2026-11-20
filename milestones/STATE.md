@@ -29,13 +29,15 @@
 ## Prod triage (report for 2026-11-19 UTC)
 
 - Errors before the 19:39 deploy come from the old discordgo build (line numbers match `3626910`): UNIQUE on original participant, shutdown timeout, EndSession "not found". The stale-participant fix covers the UNIQUE error.
-- Fixes on the M01 build (not deployed yet):
-  - Done: `dave ready: false`. The sender now gates on `ShouldHoldFrames` (`nnlxrqnr`, with a test).
-  - In progress in `@` (`uultvtvk`): the `Shutdown()` deadlock. It now unlocks `cacheMu` before `wg.Wait()`, and the update loop checks `ctx.Err()` before each tick. It builds and tests pass.
-  - Not started: the silent empty-session auto-end when inserting the starter fails.
+- Fixes on the M01 build. All are done and none are deployed. Build, vet, and `go test -race ./...` pass.
+  - `nnlxrqnr`: the sender now gates DAVE audio on `ShouldHoldFrames` instead of `Ready()`.
+  - `uultvtvk`: `Shutdown()` unlocks `cacheMu` before `wg.Wait()`. The update loop checks `ctx.Err()` before each tick.
+  - `umznrpom`: `sessionCache.Get` no longer waits on a session lock while holding `cacheMu`, and it re-checks the cache once it has the lock. `Remove` now releases the session lock. Before this, a tick racing `EndSession`, or a Join press during `/start`, could deadlock the whole cache. A temporary race test hung on the old code and passed on the new code. This may explain the ungraceful recreate at 20:37.
+  - `xqkyvtul`: if inserting the starter as a participant fails, `StartSession` ends the session and returns an error, so the user sees "Failed to start session." Previously the session started and then ended silently on the first tick.
+  - To verify in dev or prod: V03, V06, V15, V16, V17 in FOLLOWUP-01.
 - Unexplained ops events: a double start at 20:27 and an ungraceful recreate at 20:37. Check `docker logs` (panics go to stderr, not the log file) and `journalctl -u docker` on starling.
 
 ## Context
 
-- jj stack: M01 through T17–T19 is on `main` and deployed. Above it: prod triage → DAVE fix → shutdown fix (`@`). Those three are not deployed.
+- jj stack: M01 through T17–T19 is on `main` and deployed. Above it: prod triage → DAVE fix → shutdown fix → cache lock fix → starter-insert fix (`@`). None of these are deployed.
 - Local test image `pomomo-bot:m01-test` exists (not pushed); safe to `docker rmi`.

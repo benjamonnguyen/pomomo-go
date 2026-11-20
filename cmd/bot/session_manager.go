@@ -274,7 +274,12 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		IsDeafened: req.user.deaf,
 	})
 	if err != nil {
-		log.Error("failed to insert original participant", "err", err, "uid", req.user.id, "sid", session.ID)
+		// without a participant, the first tick would silently end the session as empty
+		if _, endErr := m.endSession(ctx, session); endErr != nil {
+			log.Error("failed to end session without participants", "sid", session.ID, "err", endErr)
+		}
+		m.cache.Remove(session.Record.TextCID)
+		return models.Session{}, fmt.Errorf("failed to insert original participant: %w", err)
 	}
 
 	m.startUpdateLoop(sessionCtxs[0], session.Record.TextCID)
