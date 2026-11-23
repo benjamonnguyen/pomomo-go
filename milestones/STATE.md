@@ -2,6 +2,7 @@
 
 **Current milestone:** M02 — `/stats` command
 **Position:** M02 and the 2026-11-22 triage stack were deployed to prod on 2026-11-23 at 19:03 UTC (starling.lan, both shards), from `main` @ `d8559c0e`. They have not been verified on the dev bot. `/stats` is registered globally (`stats: 1574500834404868138`). The orphaned session `8513f4a5` ended at 19:03:51 (`ended unreachable session`). Next: watch the prod logs and run the M02 FOLLOWUP-01 V03–V10 checks in prod, plus V20–V25 from M01 FOLLOWUP-01.
+**Pending deploy:** `ptxrtppm`. The session message's "Interval x | n" was 0-based (it showed `0 | 4` during the first pomodoro). It's now 1-based, and during a break it shows the pomodoro that was just completed (the long break shows `4 | 4`). The fix isn't pushed yet.
 
 ## Deploy / rollback
 

@@ -71,6 +71,19 @@ func (s Session) CurrentDuration() time.Duration {
 	}
 }
 
+// PomodoroInCycle is the 1-based number of the current pomodoro within the long break cycle;
+// during a break it's the pomodoro that was just completed.
+func (s Session) PomodoroInCycle() int {
+	n := s.Record.CompletedPomodoros
+	if s.Record.CurrentInterval == pomomo.PomodoroInterval {
+		n++ // in progress
+	}
+	if n < 1 || s.Settings.Intervals < 1 {
+		return 1
+	}
+	return (n-1)%s.Settings.Intervals + 1
+}
+
 func (s *Session) GoNextInterval(shouldUpdateStats bool) {
 	// TODO could be external
 	if shouldUpdateStats {

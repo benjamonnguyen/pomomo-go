@@ -219,3 +219,29 @@ func TestTimerMsgFailures(t *testing.T) {
 		t.Errorf("should end after %d consecutive missing access failures", maxTimerMsgMissingAccess)
 	}
 }
+
+func TestPomodoroInCycle(t *testing.T) {
+	tests := []struct {
+		name      string
+		interval  pomomo.SessionInterval
+		completed int
+		want      int
+	}{
+		{"first pomodoro", pomomo.PomodoroInterval, 0, 1},
+		{"break after first", pomomo.ShortBreakInterval, 1, 1},
+		{"second pomodoro", pomomo.PomodoroInterval, 1, 2},
+		{"fourth pomodoro", pomomo.PomodoroInterval, 3, 4},
+		{"long break after fourth", pomomo.LongBreakInterval, 4, 4},
+		{"next cycle", pomomo.PomodoroInterval, 4, 1},
+		{"skipped first pomodoro", pomomo.ShortBreakInterval, 0, 1},
+	}
+	for _, tt := range tests {
+		s := models.Session{
+			Record:   pomomo.SessionRecord{CurrentInterval: tt.interval, CompletedPomodoros: tt.completed},
+			Settings: pomomo.SessionSettingsRecord{Intervals: 4},
+		}
+		if got := s.PomodoroInCycle(); got != tt.want {
+			t.Errorf("%s: got %d, want %d", tt.name, got, tt.want)
+		}
+	}
+}

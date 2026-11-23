@@ -133,7 +133,7 @@ func SessionMessageComponents(s models.Session) []discord.LayoutComponent {
 		fmt.Sprintf("%s: %d min", pomomo.PomodoroInterval, int(s.Settings.Pomodoro.Minutes())),
 		fmt.Sprintf("%s: %d min", pomomo.ShortBreakInterval, int(s.Settings.ShortBreak.Minutes())),
 		fmt.Sprintf("%s: %d min", pomomo.LongBreakInterval, int(s.Settings.LongBreak.Minutes())),
-		fmt.Sprintf("%s: %d | %d", "Interval", s.Record.CompletedPomodoros%s.Settings.Intervals, s.Settings.Intervals),
+		fmt.Sprintf("%s: %d | %d", "Interval", s.PomodoroInCycle(), s.Settings.Intervals),
 	}
 	switch s.Record.CurrentInterval {
 	case pomomo.PomodoroInterval:
