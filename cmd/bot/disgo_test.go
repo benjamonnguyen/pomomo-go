@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -72,5 +74,89 @@ func TestSessionMessageComponents(t *testing.T) {
 	s.Record.Status = pomomo.SessionEnded
 	if ended := SessionMessageComponents(s); len(ended) != 1 {
 		t.Errorf("ended session should only show farewell, got %d components", len(ended))
+	}
+}
+
+// fakes for voice state hooks
+
+type fakeVoiceStates struct {
+	VoiceStateAdapter
+	updates int
+	err     error
+}
+
+func (f *fakeVoiceStates) UpdateVoiceState(gid, uid string, mute, deaf bool) error {
+	f.updates++
+	return f.err
+}
+
+type fakeParticipants struct {
+	ParticipantsManager
+	p                 models.Participant
+	detached, deleted bool
+}
+
+func (f *fakeParticipants) AcquireVoiceChannelLock(pomomo.VoiceChannelID) func() { return func() {} }
+
+func (f *fakeParticipants) Get(uid string, cid pomomo.VoiceChannelID) models.Participant {
+	if f.p.Record.UserID == uid && f.p.Record.VoiceCID == cid {
+		return f.p
+	}
+	return models.Participant{}
+}
+
+func (f *fakeParticipants) DetachFromChannel(ctx context.Context, uid string, cid pomomo.VoiceChannelID) (models.Participant, error) {
+	f.detached = true
+	return f.p, nil
+}
+
+func (f *fakeParticipants) Delete(ctx context.Context, id pomomo.ParticipantID) error {
+	f.deleted = true
+	return nil
+}
+
+func voiceStateUpdate(old, curr *snowflake.ID) *events.GuildVoiceStateUpdate {
+	return &events.GuildVoiceStateUpdate{
+		GenericGuildVoiceState: &events.GenericGuildVoiceState{VoiceState: discord.VoiceState{GuildID: 555, UserID: 666, ChannelID: curr}},
+		OldVoiceState:          discord.VoiceState{ChannelID: old},
+	}
+}
+
+func TestRemoveParticipantOnVoiceChannelLeave(t *testing.T) {
+	a, b := snowflake.ID(1), snowflake.ID(2)
+	participant := models.Participant{Record: pomomo.ParticipantRecord{GuildID: "555", UserID: "666", VoiceCID: "1"}}
+	tests := []struct {
+		name              string
+		curr              *snowflake.ID
+		restoreErr        error
+		updates           int
+		detached, deleted bool
+	}{
+		{"disconnect detaches without restore", nil, nil, 0, true, false},
+		{"move restores and deletes", &b, nil, 1, false, true},
+		{"move with failed restore detaches", &b, errors.New("50013"), 1, true, false},
+	}
+	for _, tt := range tests {
+		vs := &fakeVoiceStates{err: tt.restoreErr}
+		pm := &fakeParticipants{p: participant}
+		if !RemoveParticipantOnVoiceChannelLeave(context.Background(), vs, pm, voiceStateUpdate(&a, tt.curr)) {
+			t.Errorf("%s: expected participant to be handled", tt.name)
+		}
+		if vs.updates != tt.updates || pm.detached != tt.detached || pm.deleted != tt.deleted {
+			t.Errorf("%s: got updates=%d detached=%v deleted=%v", tt.name, vs.updates, pm.detached, pm.deleted)
+		}
+	}
+}
+
+func TestRestoreParticipantVoiceStateOnChannelJoin(t *testing.T) {
+	a := snowflake.ID(1)
+	detached := models.Participant{Record: pomomo.ParticipantRecord{GuildID: "555", UserID: "666"}}
+
+	vs, pm := &fakeVoiceStates{}, &fakeParticipants{p: detached}
+	if RestoreParticipantVoiceStateOnChannelJoin(context.Background(), vs, pm, voiceStateUpdate(&a, nil)) || vs.updates != 0 {
+		t.Error("disconnect shouldn't attempt restore")
+	}
+	if !RestoreParticipantVoiceStateOnChannelJoin(context.Background(), vs, pm, voiceStateUpdate(nil, &a)) || vs.updates != 1 || !pm.deleted {
+		t.Errorf("join should restore and delete detached participant, got updates=%d deleted=%v", vs.updates, pm.deleted)
 	}
 }

@@ -43,10 +43,18 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vs VoiceStateAdap
 	defer unlock()
 
 	if p := pm.Get(uid, cid); p != (models.Participant{}) {
-		if err := restoreVoiceState(ctx, vs, p); err != nil {
-			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", gid, "uid", uid)
+		// voice state can't be modified once disconnected (40032) - detach so it's restored on next join
+		restored := false
+		if after != "" {
+			if err := restoreVoiceState(ctx, vs, p); err != nil {
+				logRestErr("failed voice state restore on voice channel leave", err, "gid", gid, "uid", uid)
+			} else {
+				restored = true
+			}
+		}
+		if !restored {
 			if _, err := pm.DetachFromChannel(ctx, uid, cid); err != nil {
-				log.Error("failed to detach participant from channel after failing to restore voice state", "err", err)
+				log.Error("failed to detach participant from channel", "err", err, "gid", gid, "uid", uid)
 			}
 			log.Debug("detached participant from voice channel", "uid", uid, "sid", p.Record.SessionID)
 			return true
@@ -63,7 +71,8 @@ func RemoveParticipantOnVoiceChannelLeave(ctx context.Context, vs VoiceStateAdap
 
 func RestoreParticipantVoiceStateOnChannelJoin(ctx context.Context, vs VoiceStateAdapter, pm ParticipantsManager, u *events.GuildVoiceStateUpdate) bool {
 	before, after := voiceChannels(u)
-	if before == after {
+	if before == after || after == "" {
+		// voice state can only be restored while connected
 		return false
 	}
 	gid, uid := u.VoiceState.GuildID.String(), u.VoiceState.UserID.String()
@@ -73,7 +82,7 @@ func RestoreParticipantVoiceStateOnChannelJoin(ctx context.Context, vs VoiceStat
 	// get detached participants that we failed to restore
 	if p := pm.Get(uid, ""); p != (models.Participant{}) && p.Record.GuildID == gid {
 		if err := restoreVoiceState(ctx, vs, p); err != nil {
-			log.Error("failed voice state restore on voice channel leave", "err", err, "gid", gid, "uid", uid)
+			logRestErr("failed voice state restore on voice channel join", err, "gid", gid, "uid", uid)
 			return true
 		}
 		if err := pm.Delete(ctx, p.ID); err != nil {

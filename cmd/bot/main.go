@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -342,6 +343,25 @@ func restoreVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Parti
 
 func getVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Participant) (pomomo.VoiceState, error) {
 	return vs.GetVoiceState(p.Record.GuildID, p.Record.UserID)
+}
+
+// restErrCode returns the Discord JSON error code of a REST error, or 0.
+func restErrCode(err error) rest.JSONErrorCode {
+	var rerr *rest.Error
+	if errors.As(err, &rerr) {
+		return rerr.Code
+	}
+	return 0
+}
+
+// logRestErr logs missing permissions as a warning since they're server config, not bot errors.
+func logRestErr(msg string, err error, keyvals ...any) {
+	log.Helper()
+	lvl := log.ErrorLevel
+	if restErrCode(err) == rest.JSONErrorCodeLackPermissionsToPerformAction {
+		lvl = log.WarnLevel
+	}
+	log.Log(lvl, msg, append([]any{"err", err}, keyvals...)...)
 }
 
 func panicif(err error) {
