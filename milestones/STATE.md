@@ -1,19 +1,20 @@
 # State
 
 **Current milestone:** M03 — weekly recap card for `/stats me`; Monday weeks for weekly stats
-**Position:** M03 T01–T07 are implemented, and `go test -race ./...` passes. Nothing is pushed and nothing has run against Discord. Next:
-- user review of the card PNGs (`POMOMO_RECAP_OUT=<dir> go test ./image`);
-- dev-bot verification (M03 FOLLOWUP-01 V01–V09);
-- push and deploy with the pending changes below. There are no migrations or command changes.
+**Position:** M03 was deployed to prod on 2026-11-23 at 22:31 UTC (starling.lan, both shards) from `main` @ `950d0758`, together with the pending `ptxrtppm`, `kpnqwpkx` and `vttysqxv`. Both containers came up with no restarts, and bot1 restored its 2 running sessions. It has not been verified on the dev bot or in Discord. Next:
+- run `/stats` (card) and `/stats scope:server` in prod, using M03 FOLLOWUP-01 V01–V09 as the checklist;
+- watch the logs for `failed to send recap card`.
 
-Still open from M02: watch the prod logs and run M02 FOLLOWUP-01 V03–V10 in prod, plus M01 FOLLOWUP-01 V20–V25. M02 has been in prod since 2026-11-23 19:03 UTC (from `main` @ `d8559c0e`); `/stats` is registered globally (`stats: 1574500834404868138`).
-**Pending deploy:** `ptxrtppm`, `kpnqwpkx` (leaderboard top 3 shown as 🥇🥈🥉) and `vttysqxv` (leaderboard rows drop pomodoro counts, the 🔥 marker moves right after the name, and the totals line becomes `Server total: Nh · up/down X% from last week`). In `ptxrtppm`, the session message's "Interval x | n" was 0-based (it showed `0 | 4` during the first pomodoro). It's now 1-based, and during a break it shows the pomodoro that was just completed (the long break shows `4 | 4`). None of these are pushed yet; the M03 stack sits on top of them.
+Still open from M02: M02 FOLLOWUP-01 V03–V10 in prod, plus M01 FOLLOWUP-01 V20–V25. `/stats` is registered globally (`stats: 1574500834404868138`); M03 changed no commands.
 
 ## Deploy / rollback
 
-- Running: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m02-2026-11-23` (digest sha256:6c391cd590d8…), built from `main` @ `d8559c0e`. ghcr's `:latest` is the same image.
-- Rollback options on starling: `:m01-fixes-2026-11-20` (45ec3168ffdb, the previous prod), `:m01-disgo` (b304a023a2fa) or `:pre-m01` (02e698df90b5). To roll back: `docker tag …:<tag> …:latest && docker compose up -d` in `~/stacks/pomomo-bot`. Don't `pull`.
-- DB backups: `backups/bot{0,1}-2026-11-23-1903-pre-m02.db` (taken with the bots stopped; needed for any rollback past M02), plus the earlier `*-2026-11-20-1931-pre-m01-fixes.db` and `*-2026-11-19-1938-pre-m01.db`.
+- Running: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m03-2026-11-23` (digest sha256:3f5c15bc60c0…), built from `main` @ `950d0758`. ghcr's `:latest` is the same image.
+- Rollback options on starling:
+  - `:m02-2026-11-23` (6c391cd590d8, the previous prod; no DB restore needed, because M03 has no migrations);
+  - `:m01-fixes-2026-11-20` (45ec3168ffdb), `:m01-disgo` (b304a023a2fa) or `:pre-m01` (02e698df90b5).
+  - To roll back: `docker tag …:<tag> …:latest && docker compose up -d` in `~/stacks/pomomo-bot`. Don't `pull`.
+- DB backups: `backups/bot{0,1}-2026-11-23-2231-pre-m03.db` and `*-2026-11-23-1903-pre-m02.db` (both taken with the bots stopped; the pre-M02 one is needed for any rollback past M02), plus the earlier `*-2026-11-20-1931-pre-m01-fixes.db` and `*-2026-11-19-1938-pre-m01.db`.
 - **M02 adds migrations 000004 and 000005.** An older image refuses to start on a migrated DB, because golang-migrate can't find the DB's version in its source. So rolling back past M02 also means restoring the pre-deploy DB backup. Back up with the bots stopped before deploying.
 
 ## Decisions
@@ -47,7 +48,7 @@ Still open from M02: watch the prod logs and run M02 FOLLOWUP-01 V03–V10 in pr
 - Post-deploy log noise to clean up: `autoshush.go:71` logs `guild … not loaded` at ERRO for each restored participant on every restart (expected, since that's the startup guard); it should be Debug or Warn. Interactions that arrive while sessions are still restoring get "session not found".
 - Open follow-up: no SQLite `busy_timeout` (concurrent writes fail with `SQLITE_BUSY`); see M02 FOLLOWUP-01.
 
-## M03 changes (above the pending deploy changes)
+## M03 changes (deployed 2026-11-23 22:31 UTC)
 
 - `xrwltxmu` plan · `zuqmulwo` T02 `image` package · `sztxxkrs` T01 Monday weeks · `syxkqwqk` T03 followup files · `rzxumlks` T04 `GetWeeklyStats` · `zyvylluk` T05 text fallback · `prnqvnzu` T06 `/stats me` card · `wpwsuwnt` T07 follow-up and state · `rqyntsos` best day removed from the card · `uwqzyxln` card simplified (no name, badge, caption or footer; `Your Pomomo Stats`; no "UTC").
 - New dependency `golang.org/x/image` (plus `x/text`, indirect). `go mod tidy` needs the sandbox disabled, because the module cache is read-only.
