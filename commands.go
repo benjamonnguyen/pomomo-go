@@ -11,6 +11,10 @@ const (
 	IntervalsOption  = "intervals"
 	NoDeafenOption   = "no_deafen"
 	NoMuteOption     = "no_mute"
+
+	StatsScopeOption = "scope"
+	StatsScopeMe     = "me"
+	StatsScopeServer = "server"
 )
 
 func intPtr(i int) *int {
@@ -52,6 +56,21 @@ var StartCommand = discord.SlashCommandCreate{
 		discord.ApplicationCommandOptionBool{
 			Name:        NoMuteOption,
 			Description: "participants will not be muted during pomodoro intervals (Default: false)",
+		},
+	},
+}
+
+var StatsCommand = discord.SlashCommandCreate{
+	Name:        "stats",
+	Description: "show pomodoro stats",
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionString{
+			Name:        StatsScopeOption,
+			Description: "your stats or the server's weekly leaderboard (Default: me)",
+			Choices: []discord.ApplicationCommandOptionChoiceString{
+				{Name: StatsScopeMe, Value: StatsScopeMe},
+				{Name: StatsScopeServer, Value: StatsScopeServer},
+			},
 		},
 	},
 }

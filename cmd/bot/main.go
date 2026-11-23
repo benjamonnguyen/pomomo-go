@@ -257,7 +257,8 @@ func main() {
 				RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, u)
 		}),
 		bot.NewListenerFunc(func(e *events.ApplicationCommandInteractionCreate) {
-			_ = StartSession(topCtx, sessionManager, dm, discordAdapter, cl.Rest, e)
+			_ = StartSession(topCtx, sessionManager, dm, discordAdapter, cl.Rest, e) ||
+				Stats(topCtx, statsRepo, discordAdapter, dm, e)
 		}),
 		bot.NewListenerFunc(func(e *events.ComponentInteractionCreate) {
 			_ = SkipInterval(topCtx, sessionManager, dm, e) ||

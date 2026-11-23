@@ -40,6 +40,7 @@ func main() {
 
 	cmds := []discord.ApplicationCommandCreate{
 		pomomo.StartCommand,
+		pomomo.StatsCommand,
 	}
 
 	created, err := client.SetGlobalCommands(app.ID, cmds)

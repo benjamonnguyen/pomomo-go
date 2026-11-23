@@ -22,5 +22,5 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T06 | | `/stats [scope]` command: definition, registration in `cmd/register`, handler (`me` ephemeral, `server` public) | T05 | Done |
+| T06 | Done | `/stats [scope]` command: definition, registration in `cmd/register`, handler (`me` ephemeral, `server` public) | T05 | Done |
 | T07 | | End message: duration and pomodoros plus the weekly leaderboard; remove stats TODOs | T02, T04, T05 | The message is sent without the leaderboard if building it fails |

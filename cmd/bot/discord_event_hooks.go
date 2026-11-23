@@ -234,6 +234,54 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 	return true
 }
 
+func Stats(ctx context.Context, repo StatsRepo, members MemberLookup, dm DiscordMessenger, e *events.ApplicationCommandInteractionCreate) bool {
+	if e.Data.Type() != discord.ApplicationCommandTypeSlash {
+		return false
+	}
+	data := e.SlashCommandInteractionData()
+	if data.CommandName() != pomomo.StatsCommand.Name {
+		return false
+	}
+	it := e.ApplicationCommandInteraction
+
+	guildID, member, ok := guildMember(it)
+	if !ok {
+		if _, err := dm.Respond(it, false, TextDisplay("Pomomo stats are only available in a server.")); err != nil {
+			log.Error(err)
+		}
+		return true
+	}
+	scope, _ := data.OptString(pomomo.StatsScopeOption)
+	if scope == "" {
+		scope = pomomo.StatsScopeMe
+	}
+
+	// your own stats are private, the leaderboard is shared
+	followup, err := dm.DeferMessageCreate(it, scope == pomomo.StatsScopeMe)
+	if err != nil {
+		log.Error(err)
+		return true
+	}
+
+	var components []discord.LayoutComponent
+	switch scope {
+	case pomomo.StatsScopeServer:
+		components, err = buildLeaderboard(ctx, repo, members, guildID, time.Now())
+	default:
+		var s pomomo.UserStats
+		s, err = repo.GetUserStats(ctx, guildID, member.User.ID.String(), time.Now())
+		components = UserStatsComponents(s)
+	}
+	if err != nil {
+		log.Error("failed to get stats", "scope", scope, "gid", guildID, "err", err)
+		components = []discord.LayoutComponent{TextDisplay("Pomomo couldn't load stats. Try again in a bit or reach out to support.")}
+	}
+	if _, err := followup(components...); err != nil {
+		log.Error(err)
+	}
+	return true
+}
+
 // MessagePinner is satisfied by rest.Rest
 type MessagePinner interface {
 	PinMessage(channelID snowflake.ID, messageID snowflake.ID, opts ...rest.RequestOpt) error

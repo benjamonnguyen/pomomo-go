@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
+	"github.com/benjamonnguyen/pomomo-go/disgo"
 	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/events"
 )
 
 func TestStreakMarker(t *testing.T) {
@@ -125,6 +127,63 @@ func TestUserStatsComponents(t *testing.T) {
 	for _, want := range []string{"1h 30m", "**Pomodoros:** 4", "1/7 this week", "16/30 this month", "**Streak:** 🔥🔥", `\u003ct:1700000000:R\u003e`} {
 		if !strings.Contains(text, want) {
 			t.Errorf("stats missing %q:\n%s", want, text)
+		}
+	}
+}
+
+type fakeMessenger struct {
+	DiscordMessenger
+	ephemeral bool
+	sent      []discord.LayoutComponent
+}
+
+func (f *fakeMessenger) DeferMessageCreate(it discord.Interaction, ephemeral bool) (disgo.Followup, error) {
+	f.ephemeral = ephemeral
+	return func(components ...discord.LayoutComponent) (*discord.Message, error) {
+		f.sent = components
+		return &discord.Message{}, nil
+	}, nil
+}
+
+func (f *fakeStatsRepo) GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error) {
+	return pomomo.UserStats{Pomodoros: 1, FocusTime: 20 * time.Minute, LastActive: now}, nil
+}
+
+func statsCommandEvent(t *testing.T, options string) *events.ApplicationCommandInteractionCreate {
+	t.Helper()
+	it, err := discord.UnmarshalInteraction([]byte(`{
+		"id":"333","application_id":"444","type":2,"token":"tok","version":1,
+		"guild_id":"555","channel":{"id":"111","type":0},
+		"member":{"user":{"id":"666","username":"u"},"roles":[],"joined_at":"2026-01-01T00:00:00Z"},
+		"data":{"id":"777","name":"stats","type":1,"options":` + options + `}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &events.ApplicationCommandInteractionCreate{ApplicationCommandInteraction: it.(discord.ApplicationCommandInteraction)}
+}
+
+func TestStatsCommand(t *testing.T) {
+	tests := []struct {
+		name, options string
+		ephemeral     bool
+		want          string
+	}{
+		{"default is me", `[]`, true, "Your stats"},
+		{"me", `[{"name":"scope","type":3,"value":"me"}]`, true, "Your stats"},
+		{"server", `[{"name":"scope","type":3,"value":"server"}]`, false, "This week's leaderboard"},
+	}
+	for _, tt := range tests {
+		dm := &fakeMessenger{}
+		repo := &fakeStatsRepo{entries: []pomomo.LeaderboardEntry{{UserID: "a", FocusTime: time.Hour, Pomodoros: 3}}}
+		if !Stats(t.Context(), repo, fakeMembers{}, dm, statsCommandEvent(t, tt.options)) {
+			t.Fatalf("%s: stats command not handled", tt.name)
+		}
+		if dm.ephemeral != tt.ephemeral {
+			t.Errorf("%s: ephemeral = %v, want %v", tt.name, dm.ephemeral, tt.ephemeral)
+		}
+		if text := componentsText(t, dm.sent); !strings.Contains(text, tt.want) {
+			t.Errorf("%s: reply missing %q:\n%s", tt.name, tt.want, text)
 		}
 	}
 }
