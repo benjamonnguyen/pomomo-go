@@ -1,13 +1,13 @@
 # State
 
 **Current milestone:** M02 — `/stats` command
-**Position:** M02 T01–T07 are done (2026-11-23). `go vet` and `go test -race ./...` pass at each change. Not run against Discord, not pushed, not deployed. Next: verify with the dev bot (M02 FOLLOWUP-01 V01–V10), then deploy together with the 2026-11-22 triage stack.
+**Position:** M02 and the 2026-11-22 triage stack were deployed to prod on 2026-11-23 at 19:03 UTC (starling.lan, both shards), from `main` @ `d8559c0e`. They have not been verified on the dev bot. `/stats` is registered globally (`stats: 1574500834404868138`). The orphaned session `8513f4a5` ended at 19:03:51 (`ended unreachable session`). Next: watch the prod logs and run the M02 FOLLOWUP-01 V03–V10 checks in prod, plus V20–V25 from M01 FOLLOWUP-01.
 
 ## Deploy / rollback
 
-- Running: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m01-fixes-2026-11-20` (digest sha256:45ec3168ffdb…), built from `main` @ `1999914e`.
-- Rollback options on starling: `:m01-disgo` (b304a023a2fa, the M01 build without the fixes) or `:pre-m01` (02e698df90b5, discordgo). To roll back: `docker tag …:<tag> …:latest && docker compose up -d` in `~/stacks/pomomo-bot`. Don't `pull`, or `:latest` comes back from ghcr.
-- DB backups: `backups/*-2026-11-20-1931-pre-m01-fixes.db` (taken with the bots stopped) and `backups/bot{0,1}-2026-11-19-1938-pre-m01.db`.
+- Running: `ghcr.io/benjamonnguyen/pomomo-bot:latest` = `:m02-2026-11-23` (digest sha256:6c391cd590d8…), built from `main` @ `d8559c0e`. ghcr's `:latest` is the same image.
+- Rollback options on starling: `:m01-fixes-2026-11-20` (45ec3168ffdb, the previous prod), `:m01-disgo` (b304a023a2fa) or `:pre-m01` (02e698df90b5). To roll back: `docker tag …:<tag> …:latest && docker compose up -d` in `~/stacks/pomomo-bot`. Don't `pull`.
+- DB backups: `backups/bot{0,1}-2026-11-23-1903-pre-m02.db` (taken with the bots stopped; needed for any rollback past M02), plus the earlier `*-2026-11-20-1931-pre-m01-fixes.db` and `*-2026-11-19-1938-pre-m01.db`.
 - **M02 adds migrations 000004 and 000005.** An older image refuses to start on a migrated DB, because golang-migrate can't find the DB's version in its source. So rolling back past M02 also means restoring the pre-deploy DB backup. Back up with the bots stopped before deploying.
 
 ## Decisions
@@ -24,16 +24,16 @@
 
 - None.
 
-## Pending deploy: prod triage 2026-11-22 (on top of `main`, below M02)
+## Prod triage 2026-11-22 (deployed with M02)
 
 - `tpltzpox` disconnect detach / no 40032 · `onqmmktq` clearer user-facing errors · `znukpxmt` detach participants no longer in voice (guild-loaded guard) · `womypomz` end unreachable or left-guild sessions · `uzqqzxrr` docs · `tzmprzyv` log guild add/remove (home-server report prompt updated in jj change `qktuxkso`, not committed).
-- Orphaned prod session `8513f4a5` ends about 1 minute after this deploys (`ended unreachable session`).
 - To verify: V20–V25 in FOLLOWUP-01. Still open from M01: V03, V06, V15–V18.
 
 ## M02 changes (above the triage stack)
 
 - `kknmsput` plan/tasks · `lmwqtqvp` T01 migrations · `vlvrmxnu` T02 persist session stats · `kkmumwsv` T03 stats repo · `kktlpulp` T04 crediting (also fixes a `StartSession` data race on the returned session) · `lplntsll` T05 rendering and username lookup · `tsknxxvq` T06 `/stats` · `ovkuznnt` T07 end message · `mlsttwsy` follow-up and state · `rpqutnky` server display names on leaderboard.
-- Deploying M02 needs `cmd/register` run for both bots and a DB backup (see Deploy / rollback).
+- Deploy notes: `bot0` and `bot1` are two shards of one Discord app (both env files register the same command IDs), so one `cmd/register` run covers both. To register without the tokens leaving starling, build `cmd/register` for linux, scp it to starling, and run it with `POMOMO_CONFIG_PATH=~/stacks/pomomo-bot/.env.prod0`.
+- Post-deploy log noise to clean up: `autoshush.go:71` logs `guild … not loaded` at ERRO for each restored participant on every restart (expected, since that's the startup guard); it should be Debug or Warn. Interactions that arrive while sessions are still restoring get "session not found".
 - Open follow-up: no SQLite `busy_timeout` (concurrent writes fail with `SQLITE_BUSY`); see M02 FOLLOWUP-01.
 
 ## Context
