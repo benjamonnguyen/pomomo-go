@@ -28,7 +28,7 @@ const (
 	daveReadyTimeout = 10 * time.Second
 )
 
-// ErrVoiceStateNotFound means the member isn't connected to voice (or isn't cached).
+// ErrVoiceStateNotFound means the member isn't connected to voice in a loaded guild.
 var ErrVoiceStateNotFound = errors.New("voice state not found")
 
 // Adapter implements voice state and audio operations on disgo.
@@ -80,6 +80,10 @@ func (a *Adapter) GetVoiceState(gid, uid string) (pomomo.VoiceState, error) {
 	ids, err := ParseIDs(gid, uid)
 	if err != nil {
 		return pomomo.VoiceState{}, err
+	}
+	// voice states only arrive with GUILD_CREATE - don't report a member as out of voice before then
+	if _, ok := a.caches.Guild(ids[0]); !ok || a.caches.IsGuildUnready(ids[0]) || a.caches.IsGuildUnavailable(ids[0]) {
+		return pomomo.VoiceState{}, fmt.Errorf("guild %s not loaded", gid)
 	}
 	vs, ok := a.caches.VoiceState(ids[0], ids[1])
 	if !ok || vs.ChannelID == nil {

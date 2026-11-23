@@ -10,6 +10,7 @@ import (
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
+	"github.com/benjamonnguyen/pomomo-go/disgo"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
 	"github.com/disgoorg/snowflake/v2"
@@ -83,6 +84,11 @@ type fakeVoiceStates struct {
 	VoiceStateAdapter
 	updates int
 	err     error
+	getErr  error
+}
+
+func (f *fakeVoiceStates) GetVoiceState(gid, uid string) (pomomo.VoiceState, error) {
+	return pomomo.VoiceState{ChannelID: "1"}, f.getErr
 }
 
 func (f *fakeVoiceStates) UpdateVoiceState(gid, uid string, mute, deaf bool) error {
@@ -158,5 +164,24 @@ func TestRestoreParticipantVoiceStateOnChannelJoin(t *testing.T) {
 	}
 	if !RestoreParticipantVoiceStateOnChannelJoin(context.Background(), vs, pm, voiceStateUpdate(nil, &a)) || vs.updates != 1 || !pm.deleted {
 		t.Errorf("join should restore and delete detached participant, got updates=%d deleted=%v", vs.updates, pm.deleted)
+	}
+}
+
+func TestAutoshushDetachesParticipantNotInVoice(t *testing.T) {
+	p := models.Participant{Record: pomomo.ParticipantRecord{GuildID: "555", UserID: "666", VoiceCID: "1"}}
+	vs := &fakeVoiceStates{getErr: disgo.ErrVoiceStateNotFound}
+	pm := &fakeParticipants{p: p}
+	a := &autoshusher{pm: pm, vs: vs}
+
+	before := models.Session{Record: pomomo.SessionRecord{CurrentInterval: pomomo.ShortBreakInterval}}
+	curr := models.Session{Record: pomomo.SessionRecord{CurrentInterval: pomomo.PomodoroInterval}, Stats: models.SessionStats{Skips: 1}}
+	a.Autoshush(context.Background(), []models.Participant{p}, before, curr)
+
+	if !pm.detached {
+		t.Error("participant not in voice should be detached")
+	}
+	time.Sleep(10 * time.Millisecond) // shush runs async
+	if vs.updates != 0 {
+		t.Errorf("detached participant shouldn't be shushed, got %d updates", vs.updates)
 	}
 }

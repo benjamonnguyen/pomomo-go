@@ -70,10 +70,15 @@ func TestAdapterUpdateVoiceStateAndMove(t *testing.T) {
 }
 
 func TestAdapterGetVoiceState(t *testing.T) {
-	caches := cache.New(cache.WithCaches(cache.FlagVoiceStates))
+	caches := cache.New(cache.WithCaches(cache.FlagGuilds, cache.FlagVoiceStates))
 	cid := snowflake.ID(777)
 	caches.AddVoiceState(discord.VoiceState{GuildID: 555, UserID: 666, ChannelID: &cid, GuildMute: true})
 	a := NewAdapter(nil, caches, nil)
+
+	if _, err := a.GetVoiceState("555", "666"); err == nil || errors.Is(err, ErrVoiceStateNotFound) {
+		t.Errorf("guild not loaded yet shouldn't report member as out of voice, got %v", err)
+	}
+	caches.AddGuild(discord.CacheGuild{Guild: discord.Guild{ID: 555}})
 
 	vs, err := a.GetVoiceState("555", "666")
 	if err != nil {
@@ -82,7 +87,7 @@ func TestAdapterGetVoiceState(t *testing.T) {
 	if vs.ChannelID != "777" || !vs.Mute || vs.Deaf {
 		t.Errorf("unexpected voice state: %+v", vs)
 	}
-	if _, err := a.GetVoiceState("555", "999"); err == nil {
+	if _, err := a.GetVoiceState("555", "999"); !errors.Is(err, ErrVoiceStateNotFound) {
 		t.Error("expected error for user not in voice")
 	}
 }
