@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	SelectAllSessions = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at FROM sessions"
+	SelectAllSessions = "SELECT id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, completed_pomodoros, skips, created_at, updated_at FROM sessions"
 	SelectAllSettings = "SELECT session_id, pomodoro_duration, short_break_duration, long_break_duration, intervals, no_mute, no_deafen, created_at, updated_at FROM session_settings"
 )
 
@@ -31,6 +31,8 @@ type sessionEntity struct {
 	TimeRemainingAtStartMS int64
 	CurrentInterval        uint8
 	Status                 uint8
+	CompletedPomodoros     int
+	Skips                  int
 	CreatedAt              int64
 	UpdatedAt              int64
 }
@@ -80,10 +82,12 @@ func (r *sessionRepo) InsertSession(ctx context.Context, session pomomo.SessionR
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
+		e.CompletedPomodoros,
+		e.Skips,
 		e.CreatedAt,
 		e.UpdatedAt,
 	}
-	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
+	query := "INSERT INTO sessions (id, guild_id, text_channel_id, voice_channel_id, message_id, interval_started_at, time_remaining_at_start, current_interval, status, completed_pomodoros, skips, created_at, updated_at) VALUES " + sqliteutil.GenerateParameters(len(args))
 	r.l.Debug("creating session", "query", query, "args", args)
 	_, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -103,7 +107,7 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 	existing.UpdatedAt = time.Now()
 	e := mapToSessionEntity(existing)
 
-	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, updated_at = ? WHERE id = ?"
+	query := "UPDATE sessions SET guild_id = ?, text_channel_id = ?, voice_channel_id = ?, message_id = ?, interval_started_at = ?, time_remaining_at_start = ?, current_interval = ?, status = ?, completed_pomodoros = ?, skips = ?, updated_at = ? WHERE id = ?"
 	args := []any{
 		e.GuildID,
 		e.TextChannelID,
@@ -113,6 +117,8 @@ func (r *sessionRepo) UpdateSession(ctx context.Context, id pomomo.SessionID, s 
 		e.TimeRemainingAtStartMS,
 		e.CurrentInterval,
 		e.Status,
+		e.CompletedPomodoros,
+		e.Skips,
 		e.UpdatedAt,
 		e.ID,
 	}
@@ -253,7 +259,7 @@ func (r *sessionRepo) GetSettings(ctx context.Context, id pomomo.SessionID) (pom
 
 func extractSession(s sqliteutil.Scannable) (pomomo.ExistingSessionRecord, error) {
 	var e sessionEntity
-	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.GuildID, &e.TextChannelID, &e.VoiceChannelID, &e.MessageID, &e.IntervalStartedAt, &e.TimeRemainingAtStartMS, &e.CurrentInterval, &e.Status, &e.CompletedPomodoros, &e.Skips, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return pomomo.ExistingSessionRecord{}, ErrNotFound
 		}
@@ -286,6 +292,8 @@ func mapToSessionEntity(session pomomo.ExistingSessionRecord) sessionEntity {
 		TimeRemainingAtStartMS: session.TimeRemainingAtStart.Milliseconds(),
 		CurrentInterval:        uint8(session.CurrentInterval),
 		Status:                 uint8(session.Status),
+		CompletedPomodoros:     session.CompletedPomodoros,
+		Skips:                  session.Skips,
 		CreatedAt:              session.CreatedAt.Unix(),
 		UpdatedAt:              session.UpdatedAt.Unix(),
 	}
@@ -321,6 +329,8 @@ func mapToExistingSessionRecord(e sessionEntity) pomomo.ExistingSessionRecord {
 			TimeRemainingAtStart: time.Duration(e.TimeRemainingAtStartMS) * time.Millisecond,
 			CurrentInterval:      pomomo.SessionInterval(e.CurrentInterval),
 			Status:               pomomo.SessionStatus(e.Status),
+			CompletedPomodoros:   e.CompletedPomodoros,
+			Skips:                e.Skips,
 			// NoDeafen moved to settings
 		},
 	}

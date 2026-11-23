@@ -256,6 +256,7 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		}
 
 		session.ID = inserted.ID
+		session.StartedAt = inserted.CreatedAt
 		return nil
 	})
 	release()
@@ -299,7 +300,7 @@ func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChanne
 	s.GoNextInterval(false)
 	// TODO GoNextInterval codesmell
 	s.Record.IntervalStartedAt = time.Now()
-	s.Stats.Skips += 1
+	s.Record.Skips += 1
 
 	// Update database with new interval state
 	err := m.tx.WithinTransaction(ctx, func(ctx context.Context) error {

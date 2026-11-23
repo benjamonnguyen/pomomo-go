@@ -8,7 +8,7 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T02 | | Persist session stats: move `CompletedPomodoros`/`Skips` into `pomomo.SessionRecord`, read and write them in the session repo, add `models.Session.StartedAt` | T01 | Drop `models.SessionStats` |
+| T02 | Done | Persist session stats: move `CompletedPomodoros`/`Skips` into `pomomo.SessionRecord`, read and write them in the session repo, add `models.Session.StartedAt` | T01 | Drop `models.SessionStats` |
 | T03 | | Stats repo in `sqlite/`: `InsertFocusIntervals` (insert or ignore), `GetUserStats`, `GetLeaderboard` (with active days per user), `GetServerTotals` | T01 | Rolling UTC windows of 7/30/90 days, including today |
 
 # Phase 3

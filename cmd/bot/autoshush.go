@@ -29,7 +29,7 @@ func (a *autoshusher) Autoshush(ctx context.Context, participants []models.Parti
 		return
 	}
 	var wg sync.WaitGroup
-	skipped := curr.Stats.Skips > before.Stats.Skips // don't play interval alert if interval was skipped
+	skipped := curr.Record.Skips > before.Record.Skips // don't play interval alert if interval was skipped
 	if curr.Record.CurrentInterval != pomomo.PomodoroInterval {
 		// unshush before playing
 		for _, p := range participants {

@@ -175,7 +175,7 @@ func TestAutoshushDetachesParticipantNotInVoice(t *testing.T) {
 	a := &autoshusher{pm: pm, vs: vs}
 
 	before := models.Session{Record: pomomo.SessionRecord{CurrentInterval: pomomo.ShortBreakInterval}}
-	curr := models.Session{Record: pomomo.SessionRecord{CurrentInterval: pomomo.PomodoroInterval}, Stats: models.SessionStats{Skips: 1}}
+	curr := models.Session{Record: pomomo.SessionRecord{CurrentInterval: pomomo.PomodoroInterval, Skips: 1}}
 	a.Autoshush(context.Background(), []models.Participant{p}, before, curr)
 
 	if !pm.detached {

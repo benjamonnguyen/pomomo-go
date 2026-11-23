@@ -13,17 +13,13 @@ type Participant struct {
 	StartedIntervalAt time.Time
 }
 
-type SessionStats struct {
-	CompletedPomodoros int
-	Skips              int
-}
-
 type Session struct {
 	ID       pomomo.SessionID
 	Settings pomomo.SessionSettingsRecord
-	Stats    SessionStats // TODO maybe extract stats, handle updates in an update hook
-	Record   pomomo.SessionRecord
-	Greeting string
+	// StartedAt is when the session record was created
+	StartedAt time.Time
+	Record    pomomo.SessionRecord
+	Greeting  string
 }
 
 func SessionFromExistingRecords(record pomomo.ExistingSessionRecord, settings pomomo.ExistingSessionSettingsRecord) Session {
@@ -31,9 +27,10 @@ func SessionFromExistingRecords(record pomomo.ExistingSessionRecord, settings po
 		panic("missing required IDs")
 	}
 	return Session{
-		ID:       record.ID,
-		Record:   record.SessionRecord,
-		Settings: settings.SessionSettingsRecord,
+		ID:        record.ID,
+		Record:    record.SessionRecord,
+		Settings:  settings.SessionSettingsRecord,
+		StartedAt: record.CreatedAt,
 	}
 }
 
@@ -50,7 +47,8 @@ func NewSession(sessionID, guildID, textCID, voiceCID, messageID string, setting
 			MessageID: messageID,
 			Status:    pomomo.SessionRunning,
 		},
-		Settings: settings,
+		Settings:  settings,
+		StartedAt: time.Now(),
 	}
 	s.Record.TimeRemainingAtStart = s.CurrentDuration()
 	return s
@@ -77,7 +75,7 @@ func (s *Session) GoNextInterval(shouldUpdateStats bool) {
 	// TODO could be external
 	if shouldUpdateStats {
 		if s.Record.CurrentInterval == pomomo.PomodoroInterval {
-			s.Stats.CompletedPomodoros++
+			s.Record.CompletedPomodoros++
 		}
 	}
 
@@ -85,7 +83,7 @@ func (s *Session) GoNextInterval(shouldUpdateStats bool) {
 	var next pomomo.SessionInterval
 	if s.Record.CurrentInterval == pomomo.PomodoroInterval {
 		// After pomodoro, decide break type based on completed pomodoros
-		if s.Stats.CompletedPomodoros > 0 && s.Stats.CompletedPomodoros%s.Settings.Intervals == 0 {
+		if s.Record.CompletedPomodoros > 0 && s.Record.CompletedPomodoros%s.Settings.Intervals == 0 {
 			next = pomomo.LongBreakInterval
 		} else {
 			next = pomomo.ShortBreakInterval

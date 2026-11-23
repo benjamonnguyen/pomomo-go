@@ -52,6 +52,10 @@ type SessionRecord struct {
 	TimeRemainingAtStart time.Duration
 	CurrentInterval      SessionInterval
 	Status               SessionStatus
+
+	// stats
+	CompletedPomodoros int
+	Skips              int
 }
 
 type ExistingSessionRecord struct {
