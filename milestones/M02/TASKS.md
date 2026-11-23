@@ -16,11 +16,11 @@
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
 | T04 | Done | Credit attached participants on pomodoro → break in `sessionManager.updateSession`, in the same transaction | T02, T03 | Restore catch-up, skips, and detached participants aren't credited |
-| T05 | | Stats rendering: streak tiers, duration format, `me` view, leaderboard view; username lookup (`GetMember`, skip 10007) | T03 | Plain escaped usernames, no mentions |
+| T05 | Done | Stats rendering: streak tiers, duration format, `me` view, leaderboard view; username lookup (`GetMember`, skip 10007) | T03 | Plain escaped usernames, no mentions |
 
 # Phase 4
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T06 | | `/stats [scope]` command: definition, registration in `cmd/register`, handler (`me` ephemeral, `server` public) | T05 | |
+| T06 | | `/stats [scope]` command: definition, registration in `cmd/register`, handler (`me` ephemeral, `server` public) | T05 | Done |
 | T07 | | End message: duration and pomodoros plus the weekly leaderboard; remove stats TODOs | T02, T04, T05 | The message is sent without the leaderboard if building it fails |
