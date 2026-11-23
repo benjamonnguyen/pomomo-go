@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type SessionManager interface {
 	GetSession(cid pomomo.TextChannelID) (models.Session, error)
 	StartSession(context.Context, startSessionRequest) (models.Session, error)
 	EndSession(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
+	EndGuildSessions(ctx context.Context, gid string) error
 	SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error)
 	RestoreSessions(context.Context) error
 
@@ -347,6 +349,28 @@ func (m *sessionManager) EndSession(ctx context.Context, cid pomomo.TextChannelI
 		m.afterUpdate(ctx, *s, ended)
 	}
 	return ended, nil
+}
+
+func (m *sessionManager) EndGuildSessions(ctx context.Context, gid string) error {
+	m.cache.cacheMu.RLock()
+	var cids []pomomo.TextChannelID
+	for cid, s := range m.cache.sessions {
+		if s.Record.GuildID == gid {
+			cids = append(cids, cid)
+		}
+	}
+	m.cache.cacheMu.RUnlock()
+
+	var errs []error
+	for _, cid := range cids {
+		ended, err := m.EndSession(ctx, cid)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		log.Info("ended guild session", "sid", ended.ID, "gid", gid)
+	}
+	return errors.Join(errs...)
 }
 
 func (m *sessionManager) Shutdown() error {

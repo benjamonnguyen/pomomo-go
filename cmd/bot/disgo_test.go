@@ -13,6 +13,7 @@ import (
 	"github.com/benjamonnguyen/pomomo-go/disgo"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgo/rest"
 	"github.com/disgoorg/snowflake/v2"
 )
 
@@ -183,5 +184,32 @@ func TestAutoshushDetachesParticipantNotInVoice(t *testing.T) {
 	time.Sleep(10 * time.Millisecond) // shush runs async
 	if vs.updates != 0 {
 		t.Errorf("detached participant shouldn't be shushed, got %d updates", vs.updates)
+	}
+}
+
+func TestTimerMsgFailures(t *testing.T) {
+	f := newTimerMsgFailures()
+	if !f.unreachable("s1", &rest.Error{Code: rest.JSONErrorCodeUnknownMessage}) {
+		t.Error("deleted timer message should end session")
+	}
+	if f.unreachable("s2", errors.New("timeout")) {
+		t.Error("transient error shouldn't end session")
+	}
+
+	missingAccess := &rest.Error{Code: rest.JSONErrorCodeMissingAccess}
+	for i := 1; i < maxTimerMsgMissingAccess; i++ {
+		if f.unreachable("s2", missingAccess) {
+			t.Fatalf("ended after %d missing access failures", i)
+		}
+	}
+	f.reset("s2")
+	if f.unreachable("s2", missingAccess) {
+		t.Error("reset should clear missing access count")
+	}
+	for i := 1; i < maxTimerMsgMissingAccess-1; i++ {
+		f.unreachable("s2", missingAccess)
+	}
+	if !f.unreachable("s2", missingAccess) {
+		t.Errorf("should end after %d consecutive missing access failures", maxTimerMsgMissingAccess)
 	}
 }

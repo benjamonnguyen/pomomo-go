@@ -148,17 +148,31 @@ func main() {
 
 	// session manager
 	sessionManager := NewSessionManager(topCtx, sessionRepo, pm, tx)
+	// start go routine so that we don't get deadlocked from a recursive trigger
+	// use topCtx since ending the session cancels the session ctx, which would fail participant cleanup
+	endSessionAsync := func(s models.Session, reason string) {
+		go func() {
+			_, err := sessionManager.EndSession(topCtx, s.Record.TextCID)
+			if err != nil {
+				log.Error("failed to end "+reason+" session", "sid", s.ID, "err", err)
+				return
+			}
+			log.Info("ended "+reason+" session", "sid", s.ID)
+		}()
+	}
+	timerMsgFailures := newTimerMsgFailures()
 	sessionManager.AfterUpdate(func(ctx context.Context, before, curr models.Session) {
 		if curr.Record.Status == pomomo.SessionEnded {
+			timerMsgFailures.reset(curr.ID)
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				// handle channel message cleanup
 				_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
 				if err != nil {
-					log.Error("failed to edit discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+					log.Error("failed to edit discord channel message", "textCID", curr.Record.TextCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 				}
 				if err := unpinMessage(cl.Rest, curr.Record.TextCID, curr.Record.MessageID); err != nil {
-					log.Error("failed to unpin discord channel message", "channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+					log.Error("failed to unpin discord channel message", "textCID", curr.Record.TextCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 				}
 			})
 			wg.Go(func() {
@@ -197,16 +211,7 @@ func main() {
 
 		// end empty session
 		if len(participants) == 0 {
-			// start go routine so that we don't get deadlocked from a recursive trigger
-			// use topCtx since ending the session cancels the session ctx, which would fail participant cleanup
-			go func() {
-				_, err := sessionManager.EndSession(topCtx, curr.Record.TextCID)
-				if err != nil {
-					log.Error("failed to end empty session", "sid", curr.ID, "err", err)
-					return
-				}
-				log.Debug("ended empty session", "sid", curr.ID)
-			}()
+			endSessionAsync(curr, "empty")
 			return
 		}
 
@@ -216,8 +221,14 @@ func main() {
 			_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
 			if err != nil {
 				log.Error("failed to edit discord channel message",
-					"channelID", curr.Record.VoiceCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+					"textCID", curr.Record.TextCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
+				// bot removed from guild or channel - leave events stop arriving, so the session would never empty
+				if timerMsgFailures.unreachable(curr.ID, err) {
+					endSessionAsync(curr, "unreachable")
+				}
+				return
 			}
+			timerMsgFailures.reset(curr.ID)
 		})
 
 		wg.Go(func() {
@@ -230,6 +241,12 @@ func main() {
 
 	// discord event hooks
 	cl.AddEventListeners(
+		bot.NewListenerFunc(func(e *events.GuildLeave) {
+			// removed from guild - no more voice state or interaction events for its sessions
+			if err := sessionManager.EndGuildSessions(topCtx, e.GuildID.String()); err != nil {
+				log.Error("failed to end sessions on guild leave", "gid", e.GuildID, "err", err)
+			}
+		}),
 		bot.NewListenerFunc(func(u *events.GuildVoiceStateUpdate) {
 			_ = RestoreParticipantVoiceStateOnChannelJoin(topCtx, discordAdapter, pm, u) ||
 				RemoveParticipantOnVoiceChannelLeave(topCtx, discordAdapter, pm, u)
@@ -343,6 +360,40 @@ func restoreVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Parti
 
 func getVoiceState(ctx context.Context, vs VoiceStateAdapter, p models.Participant) (pomomo.VoiceState, error) {
 	return vs.GetVoiceState(p.Record.GuildID, p.Record.UserID)
+}
+
+// maxTimerMsgMissingAccess is how many consecutive ticks a session's timer message can be
+// inaccessible before it's ended, in case access is restored.
+const maxTimerMsgMissingAccess = 3
+
+// timerMsgFailures tracks sessions whose timer message can't be edited.
+type timerMsgFailures struct {
+	mu            sync.Mutex
+	missingAccess map[pomomo.SessionID]int
+}
+
+func newTimerMsgFailures() *timerMsgFailures {
+	return &timerMsgFailures{missingAccess: make(map[pomomo.SessionID]int)}
+}
+
+// unreachable records a failed edit and reports whether the session should be ended.
+func (f *timerMsgFailures) unreachable(sid pomomo.SessionID, err error) bool {
+	switch restErrCode(err) {
+	case rest.JSONErrorCodeUnknownGuild, rest.JSONErrorCodeUnknownChannel, rest.JSONErrorCodeUnknownMessage:
+		return true
+	case rest.JSONErrorCodeMissingAccess:
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.missingAccess[sid]++
+		return f.missingAccess[sid] >= maxTimerMsgMissingAccess
+	}
+	return false
+}
+
+func (f *timerMsgFailures) reset(sid pomomo.SessionID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.missingAccess, sid)
 }
 
 // restErrCode returns the Discord JSON error code of a REST error, or 0.
