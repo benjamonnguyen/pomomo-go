@@ -3,7 +3,7 @@
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
 | T01 | | Monday weeks: add `pomomo.WeekStart` and `MonthStart`, plus `WeeklyStats`. `GetLeaderboard` ranks from `WeekStart`. `buildLeaderboard` compares `[WeekStart, now)` with `[WeekStart-7d, now-7d)`. The leaderboard header gains a date range line. | | Streak active days stay rolling (`WindowStart`). Boundary tests: Sun 23:59 → Mon 00:00, year edge. |
-| T02 | | Root-level `image` package: `Recap`, `RenderRecap`; port the prototype; embed Noto Sans ×3, `fire.png` and license files; strip unsupported glyphs from names; add `golang.org/x/image` | | Smoke tests: valid 1800×880 PNG; tiers 0–3; empty week; long, unsupported and empty names |
+| T02 | Done | Root-level `image` package: `Recap`, `RenderRecap`; port the prototype; embed Noto Sans ×3, `fire.png` and license files; strip unsupported glyphs from names; add `golang.org/x/image` | | Smoke tests: valid 1800×880 PNG; tiers 0–3; empty week; long, unsupported and empty names |
 | T03 | | Followup file attachments in `disgo/messenger.go` (Components V2 + `MediaGallery` referencing `attachment://…`) | | Keeps the existing `Followup` callers working |
 
 # Phase 2
