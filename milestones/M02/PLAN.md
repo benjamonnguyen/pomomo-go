@@ -26,7 +26,7 @@
   - 🔥🔥 for 16+ active days in the month
   - 🔥🔥🔥 for 64+ active days in the quarter
 - **`/stats me`** (ephemeral): all-time focus time, pomodoros, and sessions joined; active days this week, month, and quarter; the streak marker; and last active. With no data, the reply says "No pomodoros yet — join a session to start tracking."
-- **`/stats server`** (public): leaderboard of the top 5 for the week, ranked by focus time. Each row shows rank, server display name, focus time, pomodoros, and the streak marker. Discord markdown has no tables, so rows are list lines. Below the table: server totals for the week (focus time, pomodoros, sessions, active users). With no data, the reply says "No pomodoros this week."
+- **`/stats server`** (public): leaderboard of the top 5 for the week, ranked by focus time. The top 3 get 🥇🥈🥉 instead of a number. Each row shows rank, server display name, focus time, pomodoros, and the streak marker. Discord markdown has no tables, so rows are list lines. Below the table: server totals for the week (focus time, pomodoros, sessions, active users). With no data, the reply says "No pomodoros this week."
 - **Names, not mentions:** the leaderboard shows server display names (nickname, then global display name, then username; markdown-escaped). It never uses `<@id>` mentions, so nobody gets pinged.
 - **Departed users are omitted** from the leaderboard. The top 5 is filled from the next-ranked users who are still members.
 - **End message:** the farewell message shows the session's duration and completed pomodoros, followed by the server's weekly leaderboard (the same component as `/stats server`). No per-participant message.

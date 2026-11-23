@@ -85,6 +85,16 @@ func UserStatsComponents(s pomomo.UserStats) []discord.LayoutComponent {
 	return []discord.LayoutComponent{statsContainer(strings.Join(lines, "\n"))}
 }
 
+var medals = []string{"🥇", "🥈", "🥉"}
+
+// rankLabel uses medals for the top 3, then "4." etc.
+func rankLabel(i int) string {
+	if i < len(medals) {
+		return medals[i]
+	}
+	return fmt.Sprintf("%d.", i+1)
+}
+
 type leaderboardRow struct {
 	pomomo.LeaderboardEntry
 	Name string
@@ -96,7 +106,7 @@ func LeaderboardComponents(rows []leaderboardRow, totals pomomo.ServerTotals) []
 	}
 	lines := []string{"### This week's leaderboard"}
 	for i, r := range rows {
-		line := fmt.Sprintf("%d. **%s** — %s · %d 🍅", i+1, escapeMarkdown(r.Name), formatDuration(r.FocusTime), r.Pomodoros)
+		line := fmt.Sprintf("%s **%s** — %s · %d 🍅", rankLabel(i), escapeMarkdown(r.Name), formatDuration(r.FocusTime), r.Pomodoros)
 		if marker := streakMarker(r.ActiveDays); marker != "" {
 			line += " " + marker
 		}

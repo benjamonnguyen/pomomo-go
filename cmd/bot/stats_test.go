@@ -99,7 +99,7 @@ func TestBuildLeaderboard(t *testing.T) {
 	if repo.limit != leaderboardCandidates {
 		t.Errorf("expected %d candidates, got %d", leaderboardCandidates, repo.limit)
 	}
-	for _, want := range []string{`1. **name\\_a** — 20m · 1 🍅 🔥`, `5. **name\\_e**`, "This week: 1h 0m focused"} {
+	for _, want := range []string{`🥇 **name\\_a** — 20m · 1 🍅 🔥`, `🥈 **name\\_b**`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "This week: 1h 0m focused"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("leaderboard missing %q:\n%s", want, text)
 		}
