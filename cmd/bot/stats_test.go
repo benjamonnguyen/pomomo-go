@@ -156,6 +156,31 @@ func TestUserStatsComponents(t *testing.T) {
 	}
 }
 
+func TestRecapComponents(t *testing.T) {
+	now := time.Date(2026, 11, 26, 15, 0, 0, 0, time.UTC)
+	stats := pomomo.WeeklyStats{
+		Days:       [7]time.Duration{50 * time.Minute, 100 * time.Minute, 25 * time.Minute, 75 * time.Minute},
+		Month:      26 * time.Hour,
+		Lifetime:   1205*time.Hour + 30*time.Minute,
+		ActiveDays: pomomo.ActiveDays{Week: 4},
+	}
+	text := componentsText(t, RecapComponents(newRecap("ben_jamon", stats, now)))
+	for _, want := range []string{`### ben\\_jamon's Weekly Recap 🔥`, "-# Mon, Nov 23 – Sun, Nov 29 UTC", "**Total focus**",
+		"This week 4h 10m · This month 26h · Lifetime 1,205h"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("recap missing %q:\n%s", want, text)
+		}
+	}
+	for _, unwanted := range []string{"Pomodoros", "Sessions", "Active days", "Best day", "November", "Tue"} {
+		if strings.Contains(text, unwanted) {
+			t.Errorf("recap shouldn't contain %q:\n%s", unwanted, text)
+		}
+	}
+	if text := componentsText(t, RecapComponents(newRecap("", pomomo.WeeklyStats{}, now))); !strings.Contains(text, "### Your Weekly Recap\\n") {
+		t.Errorf("expected generic title for empty name:\n%s", text)
+	}
+}
+
 type fakeMessenger struct {
 	DiscordMessenger
 	ephemeral bool

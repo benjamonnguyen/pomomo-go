@@ -9,6 +9,7 @@ import (
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/disgo"
+	pomoimage "github.com/benjamonnguyen/pomomo-go/image"
 	"github.com/charmbracelet/log"
 	"github.com/disgoorg/disgo/discord"
 )
@@ -32,18 +33,22 @@ type MemberLookup interface {
 	DisplayName(gid, uid string) (name string, inGuild bool, err error)
 }
 
-// streakMarker returns the highest hot streak tier reached.
-func streakMarker(d pomomo.ActiveDays) string {
+// streakTier returns the highest hot streak tier reached, 0–3.
+func streakTier(d pomomo.ActiveDays) int {
 	switch {
 	case d.Quarter >= 64:
-		return "🔥🔥🔥"
+		return 3
 	case d.Month >= 16:
-		return "🔥🔥"
+		return 2
 	case d.Week >= 4:
-		return "🔥"
+		return 1
 	default:
-		return ""
+		return 0
 	}
+}
+
+func streakMarker(d pomomo.ActiveDays) string {
+	return strings.Repeat("🔥", streakTier(d))
 }
 
 func formatDuration(d time.Duration) string {
@@ -107,6 +112,39 @@ func UserStatsComponents(s pomomo.UserStats) []discord.LayoutComponent {
 		lines = append(lines, "**Streak:** "+marker)
 	}
 	lines = append(lines, fmt.Sprintf("**Last active:** <t:%d:R>", s.LastActive.Unix()))
+	return []discord.LayoutComponent{statsContainer(strings.Join(lines, "\n"))}
+}
+
+// newRecap builds the recap card's data; name is the user's server display name.
+func newRecap(name string, s pomomo.WeeklyStats, now time.Time) pomoimage.Recap {
+	return pomoimage.Recap{
+		Name:      name,
+		WeekStart: pomomo.WeekStart(now),
+		Now:       now,
+		Days:      s.Days,
+		Streak:    streakTier(s.ActiveDays),
+		Month:     s.Month,
+		Lifetime:  s.Lifetime,
+	}
+}
+
+// RecapComponents is the text version of the recap card, sent when the card can't be.
+func RecapComponents(r pomoimage.Recap) []discord.LayoutComponent {
+	title := "Your Weekly Recap"
+	if name := strings.TrimSpace(r.Name); name != "" {
+		title = escapeMarkdown(name) + "'s Weekly Recap"
+	}
+	if marker := strings.Repeat("🔥", r.Streak); marker != "" {
+		title += " " + marker
+	}
+	weekEnd := r.WeekStart.AddDate(0, 0, 6)
+	lines := []string{
+		"### " + title,
+		"-# " + r.WeekStart.Format("Mon, Jan 2") + " – " + weekEnd.Format("Mon, Jan 2") + " UTC",
+		"**Total focus**",
+		fmt.Sprintf("This week %s · This month %s · Lifetime %s",
+			pomoimage.FormatDuration(r.Week()), pomoimage.FormatDuration(r.Month), pomoimage.FormatHours(r.Lifetime)),
+	}
 	return []discord.LayoutComponent{statsContainer(strings.Join(lines, "\n"))}
 }
 

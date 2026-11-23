@@ -16,7 +16,7 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T05 | | Text fallback: `RecapComponents(name, stats, now)`: header with fires, date range, and This week · This month · Lifetime. No daily times or best day. Replaces `UserStatsComponents`. | T04 | Markdown-escaped name |
+| T05 | Done | Text fallback: `RecapComponents(name, stats, now)`: header with fires, date range, and This week · This month · Lifetime. No daily times or best day. Replaces `UserStatsComponents`. | T04 | Markdown-escaped name |
 | T06 | | `/stats me` handler: display name → `GetWeeklyStats` → `pomoimage.RenderRecap` → ephemeral followup with `weekly-recap.png`. Falls back to text on render or send failure. | T02, T03, T05 | Handler tests: file attached, fallback path |
 
 # Phase 4
