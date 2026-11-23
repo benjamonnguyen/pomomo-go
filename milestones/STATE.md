@@ -1,7 +1,7 @@
 # State
 
-**Current milestone:** M02 — `/stats` command (plan final 2026-11-23, executing)
-**Position:** M02 tasks are being executed in jj changes above the M01 triage stack; see `milestones/M02/TASKS.md`. Neither M02 nor the 2026-11-22 triage stack is pushed or deployed.
+**Current milestone:** M02 — `/stats` command
+**Position:** M02 T01–T07 are done (2026-11-23). `go vet` and `go test -race ./...` pass at each change. Not run against Discord, not pushed, not deployed. Next: verify with the dev bot (M02 FOLLOWUP-01 V01–V10), then deploy together with the 2026-11-22 triage stack.
 
 ## Deploy / rollback
 
@@ -29,6 +29,12 @@
 - `tpltzpox` disconnect detach / no 40032 · `onqmmktq` clearer user-facing errors · `znukpxmt` detach participants no longer in voice (guild-loaded guard) · `womypomz` end unreachable or left-guild sessions · `uzqqzxrr` docs · `tzmprzyv` log guild add/remove (home-server report prompt updated in jj change `qktuxkso`, not committed).
 - Orphaned prod session `8513f4a5` ends about 1 minute after this deploys (`ended unreachable session`).
 - To verify: V20–V25 in FOLLOWUP-01. Still open from M01: V03, V06, V15–V18.
+
+## M02 changes (above the triage stack)
+
+- `kknmsput` plan/tasks · `lmwqtqvp` T01 migrations · `vlvrmxnu` T02 persist session stats · `kkmumwsv` T03 stats repo · `kktlpulp` T04 crediting (also fixes a `StartSession` data race on the returned session) · `lplntsll` T05 rendering and username lookup · `tsknxxvq` T06 `/stats` · `ovkuznnt` T07 end message · `@` follow-up and state.
+- Deploying M02 needs `cmd/register` run for both bots and a DB backup (see Deploy / rollback).
+- Open follow-up: no SQLite `busy_timeout` (concurrent writes fail with `SQLITE_BUSY`); see M02 FOLLOWUP-01.
 
 ## Context
 
