@@ -93,20 +93,12 @@ func TestStatsRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	alice, err := repo.GetUserStats(ctx, "g", "alice", now)
+	alice, err := repo.GetWeeklyStats(ctx, "g", "alice", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !alice.LastActive.Equal(now) {
-		t.Errorf("alice last active: %v", alice.LastActive)
-	}
-	alice.LastActive = time.Time{}
-	want := pomomo.UserStats{FocusTime: 80 * time.Minute, Pomodoros: 4, Sessions: 3, ActiveDays: pomomo.ActiveDays{Week: 2, Month: 3, Quarter: 3}}
-	if alice != want {
-		t.Errorf("alice stats:\n got %+v\nwant %+v", alice, want)
-	}
-	if nobody, err := repo.GetUserStats(ctx, "g", "nobody", now); err != nil || nobody != (pomomo.UserStats{}) {
-		t.Errorf("expected empty stats, got %+v, %v", nobody, err)
+	if alice.Lifetime != 80*time.Minute || alice.ActiveDays != (pomomo.ActiveDays{Week: 2, Month: 3, Quarter: 3}) {
+		t.Errorf("alice stats: %+v", alice)
 	}
 
 	board, err := repo.GetLeaderboard(ctx, "g", now, 5)
@@ -227,7 +219,7 @@ type testManagers struct {
 	pm    ParticipantsManager
 	repo  SessionRepo
 	stats interface {
-		GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error)
+		GetWeeklyStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.WeeklyStats, error)
 	}
 }
 
@@ -283,14 +275,14 @@ func TestUpdateSessionCreditsAttachedParticipants(t *testing.T) {
 	// break ends - nothing to credit
 	completePomodoro()
 
-	starter, err := m.stats.GetUserStats(ctx, "g", "starter", time.Now())
+	starter, err := m.stats.GetWeeklyStats(ctx, "g", "starter", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if starter.Pomodoros != 1 || starter.FocusTime != 20*time.Minute {
+	if starter.Lifetime != 20*time.Minute {
 		t.Errorf("starter should be credited once, got %+v", starter)
 	}
-	if detached, _ := m.stats.GetUserStats(ctx, "g", "detached", time.Now()); detached.Pomodoros != 0 {
+	if detached, _ := m.stats.GetWeeklyStats(ctx, "g", "detached", time.Now()); detached.Lifetime != 0 {
 		t.Errorf("detached participant shouldn't be credited, got %+v", detached)
 	}
 	if stored, _ := m.repo.GetSession(ctx, session.ID); stored.CompletedPomodoros != 1 {
@@ -301,7 +293,7 @@ func TestUpdateSessionCreditsAttachedParticipants(t *testing.T) {
 	if _, err := m.sm.SkipInterval(ctx, "t"); err != nil {
 		t.Fatal(err)
 	}
-	if starter, _ := m.stats.GetUserStats(ctx, "g", "starter", time.Now()); starter.Pomodoros != 1 {
+	if starter, _ := m.stats.GetWeeklyStats(ctx, "g", "starter", time.Now()); starter.Lifetime != 20*time.Minute {
 		t.Errorf("skipped pomodoro shouldn't be credited, got %+v", starter)
 	}
 }
@@ -337,7 +329,7 @@ func TestRestoreSessionsDoesNotCreditCatchUp(t *testing.T) {
 	if s.Record.CompletedPomodoros == 0 {
 		t.Error("catch-up should still advance the pomodoro count")
 	}
-	if u, _ := m.stats.GetUserStats(ctx, "g", "u", time.Now()); u.Pomodoros != 0 {
+	if u, _ := m.stats.GetWeeklyStats(ctx, "g", "u", time.Now()); u.Lifetime != 0 {
 		t.Errorf("catch-up pomodoros shouldn't be credited, got %+v", u)
 	}
 }

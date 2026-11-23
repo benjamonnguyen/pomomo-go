@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
 	"github.com/benjamonnguyen/pomomo-go/disgo"
+	pomoimage "github.com/benjamonnguyen/pomomo-go/image"
 	"github.com/charmbracelet/log"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
@@ -263,23 +265,52 @@ func Stats(ctx context.Context, repo StatsRepo, members MemberLookup, dm Discord
 		return true
 	}
 
-	var components []discord.LayoutComponent
-	switch scope {
-	case pomomo.StatsScopeServer:
-		components, err = buildLeaderboard(ctx, repo, members, guildID, time.Now())
-	default:
-		var s pomomo.UserStats
-		s, err = repo.GetUserStats(ctx, guildID, member.User.ID.String(), time.Now())
-		components = UserStatsComponents(s)
+	if scope != pomomo.StatsScopeServer {
+		sendRecap(ctx, repo, dm, followup, it, guildID, member, time.Now())
+		return true
 	}
+	components, err := buildLeaderboard(ctx, repo, members, guildID, time.Now())
 	if err != nil {
 		log.Error("failed to get stats", "scope", scope, "gid", guildID, "err", err)
-		components = []discord.LayoutComponent{TextDisplay("Pomomo couldn't load stats. Try again in a bit or reach out to support.")}
+		components = []discord.LayoutComponent{TextDisplay(statsErrMsg)}
 	}
 	if _, err := followup(components...); err != nil {
 		log.Error(err)
 	}
 	return true
+}
+
+const (
+	statsErrMsg = "Pomomo couldn't load stats. Try again in a bit or reach out to support."
+	recapFile   = "weekly-recap.png"
+)
+
+// sendRecap sends the user's weekly recap card, or its text version if the card can't be sent.
+func sendRecap(ctx context.Context, repo StatsRepo, dm DiscordMessenger, followup disgo.Followup, it discord.Interaction, gid string, member *discord.ResolvedMember, now time.Time) {
+	s, err := repo.GetWeeklyStats(ctx, gid, member.User.ID.String(), now)
+	if err != nil {
+		log.Error("failed to get stats", "scope", pomomo.StatsScopeMe, "gid", gid, "err", err)
+		if _, err := followup(TextDisplay(statsErrMsg)); err != nil {
+			log.Error(err)
+		}
+		return
+	}
+	recap := newRecap(member.EffectiveName(), s, now)
+	card, err := pomoimage.RenderRecap(recap)
+	if err == nil {
+		gallery := discord.NewMediaGallery(discord.MediaGalleryItem{
+			Media:       discord.UnfurledMediaItem{URL: "attachment://" + recapFile},
+			Description: "Weekly recap: " + pomoimage.FormatDuration(recap.Week()) + " of focus this week",
+		})
+		file := discord.NewFile(recapFile, "", bytes.NewReader(card))
+		if _, err = dm.FollowupWithFiles(it, []*discord.File{file}, gallery); err == nil {
+			return
+		}
+	}
+	log.Error("failed to send recap card - sending text instead", "gid", gid, "err", err)
+	if _, err := followup(RecapComponents(recap)...); err != nil {
+		log.Error(err)
+	}
 }
 
 // MessagePinner is satisfied by rest.Rest

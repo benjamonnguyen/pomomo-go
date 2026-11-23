@@ -290,9 +290,12 @@ func drawable(s string) string {
 
 func (c *canvas) roundRect(x, y, w, h, r float64, col color.Color) {
 	r = math.Min(r, math.Min(w, h)/2)
-	X, Y, W, H, R := float32(x*scale), float32(y*scale), float32(w*scale), float32(h*scale), float32(r*scale)
+	// rasterize only the rect's bounding box, in its own coordinates
+	bounds := image.Rect(int(math.Floor(x*scale)), int(math.Floor(y*scale)), int(math.Ceil((x+w)*scale)), int(math.Ceil((y+h)*scale)))
+	X, Y := float32(x*scale)-float32(bounds.Min.X), float32(y*scale)-float32(bounds.Min.Y)
+	W, H, R := float32(w*scale), float32(h*scale), float32(r*scale)
 	const k = 0.5523 // cubic bezier approximation of a quarter circle
-	z := vector.NewRasterizer(c.img.Bounds().Dx(), c.img.Bounds().Dy())
+	z := vector.NewRasterizer(bounds.Dx(), bounds.Dy())
 	z.MoveTo(X+R, Y)
 	z.LineTo(X+W-R, Y)
 	z.CubeTo(X+W-R+R*k, Y, X+W, Y+R-R*k, X+W, Y+R)
@@ -303,7 +306,7 @@ func (c *canvas) roundRect(x, y, w, h, r float64, col color.Color) {
 	z.LineTo(X, Y+R)
 	z.CubeTo(X, Y+R-R*k, X+R-R*k, Y, X+R, Y)
 	z.ClosePath()
-	z.Draw(c.img, c.img.Bounds(), image.NewUniform(col), image.Point{})
+	z.Draw(c.img, bounds, image.NewUniform(col), image.Point{})
 }
 
 func (c *canvas) image(src image.Image, x, y, w, h, alpha float64) {

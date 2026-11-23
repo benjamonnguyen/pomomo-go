@@ -21,7 +21,7 @@ const (
 )
 
 type StatsRepo interface {
-	GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error)
+	GetWeeklyStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.WeeklyStats, error)
 	GetLeaderboard(ctx context.Context, guildID string, now time.Time, limit int) ([]pomomo.LeaderboardEntry, error)
 	GetServerTotals(ctx context.Context, guildID string, since, until time.Time) (pomomo.ServerTotals, error)
 }
@@ -94,25 +94,6 @@ func statsContainer(content string) discord.ContainerComponent {
 		Components:  []discord.ContainerSubComponent{TextDisplay(content)},
 		AccentColor: int(ColorOrange),
 	}
-}
-
-func UserStatsComponents(s pomomo.UserStats) []discord.LayoutComponent {
-	if s.Pomodoros == 0 {
-		return []discord.LayoutComponent{TextDisplay("No pomodoros yet — join a session to start tracking.")}
-	}
-	lines := []string{
-		"### Your stats",
-		"**Focus time:** " + formatDuration(s.FocusTime),
-		fmt.Sprintf("**Pomodoros:** %d", s.Pomodoros),
-		fmt.Sprintf("**Sessions:** %d", s.Sessions),
-		fmt.Sprintf("**Active days:** %d/%d this week · %d/%d this month · %d/%d this quarter",
-			s.ActiveDays.Week, pomomo.WeekDays, s.ActiveDays.Month, pomomo.MonthDays, s.ActiveDays.Quarter, pomomo.QuarterDays),
-	}
-	if marker := streakMarker(s.ActiveDays); marker != "" {
-		lines = append(lines, "**Streak:** "+marker)
-	}
-	lines = append(lines, fmt.Sprintf("**Last active:** <t:%d:R>", s.LastActive.Unix()))
-	return []discord.LayoutComponent{statsContainer(strings.Join(lines, "\n"))}
 }
 
 // newRecap builds the recap card's data; name is the user's server display name.

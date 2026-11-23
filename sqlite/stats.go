@@ -50,24 +50,6 @@ func windowArgs(now time.Time) []any {
 	}
 }
 
-func (r *statsRepo) GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error) {
-	query := `SELECT COALESCE(SUM(duration), 0), COUNT(*), COUNT(DISTINCT session_id), COALESCE(MAX(completed_at), 0), ` + activeDaysCols + `
-	FROM focus_intervals WHERE guild_id = ? AND user_id = ?`
-	args := append(windowArgs(now), guildID, userID)
-
-	var focusSecs, lastActive int64
-	var s pomomo.UserStats
-	row := r.dbGetter(ctx).QueryRowContext(ctx, query, args...)
-	if err := row.Scan(&focusSecs, &s.Pomodoros, &s.Sessions, &lastActive, &s.ActiveDays.Week, &s.ActiveDays.Month, &s.ActiveDays.Quarter); err != nil {
-		return pomomo.UserStats{}, err
-	}
-	s.FocusTime = time.Duration(focusSecs) * time.Second
-	if lastActive > 0 {
-		s.LastActive = time.Unix(lastActive, 0)
-	}
-	return s, nil
-}
-
 // GetWeeklyStats returns focus time per day of now's Monday week, month and lifetime totals, and rolling active days.
 func (r *statsRepo) GetWeeklyStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.WeeklyStats, error) {
 	db := r.dbGetter(ctx)

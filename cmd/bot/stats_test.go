@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -141,21 +143,6 @@ func TestBuildLeaderboard(t *testing.T) {
 	}
 }
 
-func TestUserStatsComponents(t *testing.T) {
-	if !strings.Contains(componentsText(t, UserStatsComponents(pomomo.UserStats{})), "No pomodoros yet") {
-		t.Error("expected empty stats message")
-	}
-	text := componentsText(t, UserStatsComponents(pomomo.UserStats{
-		FocusTime: 90 * time.Minute, Pomodoros: 4, Sessions: 2, LastActive: time.Unix(1700000000, 0),
-		ActiveDays: pomomo.ActiveDays{Week: 1, Month: 16, Quarter: 16},
-	}))
-	for _, want := range []string{"1h 30m", "**Pomodoros:** 4", "1/7 this week", "16/30 this month", "**Streak:** 🔥🔥", `\u003ct:1700000000:R\u003e`} {
-		if !strings.Contains(text, want) {
-			t.Errorf("stats missing %q:\n%s", want, text)
-		}
-	}
-}
-
 func TestRecapComponents(t *testing.T) {
 	now := time.Date(2026, 11, 26, 15, 0, 0, 0, time.UTC)
 	stats := pomomo.WeeklyStats{
@@ -185,6 +172,16 @@ type fakeMessenger struct {
 	DiscordMessenger
 	ephemeral bool
 	sent      []discord.LayoutComponent
+	files     []*discord.File
+	filesErr  error
+}
+
+func (f *fakeMessenger) FollowupWithFiles(it discord.Interaction, files []*discord.File, components ...discord.LayoutComponent) (*discord.Message, error) {
+	if f.filesErr != nil {
+		return nil, f.filesErr
+	}
+	f.files, f.sent = files, components
+	return &discord.Message{}, nil
 }
 
 func (f *fakeMessenger) DeferMessageCreate(it discord.Interaction, ephemeral bool) (disgo.Followup, error) {
@@ -195,8 +192,8 @@ func (f *fakeMessenger) DeferMessageCreate(it discord.Interaction, ephemeral boo
 	}, nil
 }
 
-func (f *fakeStatsRepo) GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error) {
-	return pomomo.UserStats{Pomodoros: 1, FocusTime: 20 * time.Minute, LastActive: now}, nil
+func (f *fakeStatsRepo) GetWeeklyStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.WeeklyStats, error) {
+	return pomomo.WeeklyStats{Days: [7]time.Duration{20 * time.Minute}, Lifetime: 20 * time.Minute}, nil
 }
 
 func statsCommandEvent(t *testing.T, options string) *events.ApplicationCommandInteractionCreate {
@@ -204,7 +201,7 @@ func statsCommandEvent(t *testing.T, options string) *events.ApplicationCommandI
 	it, err := discord.UnmarshalInteraction([]byte(`{
 		"id":"333","application_id":"444","type":2,"token":"tok","version":1,
 		"guild_id":"555","channel":{"id":"111","type":0},
-		"member":{"user":{"id":"666","username":"u"},"roles":[],"joined_at":"2026-01-01T00:00:00Z"},
+		"member":{"nick":"Tomato Fan","user":{"id":"666","username":"u"},"roles":[],"joined_at":"2026-01-01T00:00:00Z"},
 		"data":{"id":"777","name":"stats","type":1,"options":` + options + `}
 	}`))
 	if err != nil {
@@ -219,8 +216,8 @@ func TestStatsCommand(t *testing.T) {
 		ephemeral     bool
 		want          string
 	}{
-		{"default is me", `[]`, true, "Your stats"},
-		{"me", `[{"name":"scope","type":3,"value":"me"}]`, true, "Your stats"},
+		{"default is me", `[]`, true, "attachment://weekly-recap.png"},
+		{"me", `[{"name":"scope","type":3,"value":"me"}]`, true, "attachment://weekly-recap.png"},
 		{"server", `[{"name":"scope","type":3,"value":"server"}]`, false, "This week's leaderboard"},
 	}
 	for _, tt := range tests {
@@ -235,6 +232,21 @@ func TestStatsCommand(t *testing.T) {
 		if text := componentsText(t, dm.sent); !strings.Contains(text, tt.want) {
 			t.Errorf("%s: reply missing %q:\n%s", tt.name, tt.want, text)
 		}
+		if wantFile := tt.ephemeral; wantFile != (len(dm.files) == 1) {
+			t.Errorf("%s: files = %v", tt.name, dm.files)
+		} else if wantFile {
+			b, _ := io.ReadAll(dm.files[0].Reader)
+			if dm.files[0].Name != "weekly-recap.png" || !bytes.HasPrefix(b, []byte("\x89PNG")) {
+				t.Errorf("%s: expected png attachment, got %s (%d bytes)", tt.name, dm.files[0].Name, len(b))
+			}
+		}
+	}
+
+	// the text version is sent when the card can't be
+	dm := &fakeMessenger{filesErr: errors.New("upload failed")}
+	Stats(t.Context(), &fakeStatsRepo{}, fakeMembers{}, dm, statsCommandEvent(t, `[]`))
+	if text := componentsText(t, dm.sent); !strings.Contains(text, "### Tomato Fan's Weekly Recap") || !strings.Contains(text, "This week 20m") {
+		t.Errorf("expected text recap fallback:\n%s", text)
 	}
 }
 

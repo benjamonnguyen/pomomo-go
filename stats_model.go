@@ -40,14 +40,6 @@ type ActiveDays struct {
 	Week, Month, Quarter int
 }
 
-type UserStats struct {
-	FocusTime  time.Duration
-	Pomodoros  int
-	Sessions   int
-	LastActive time.Time // zero if never active
-	ActiveDays ActiveDays
-}
-
 // WeeklyStats is a user's Monday week in a server, plus month and lifetime totals.
 type WeeklyStats struct {
 	Days       [7]time.Duration // focus time per UTC day, Monday first
