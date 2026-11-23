@@ -1,9 +1,13 @@
 # State
 
-**Current milestone:** M02 — `/stats` command
-**Position:** M02 and the 2026-11-22 triage stack were deployed to prod on 2026-11-23 at 19:03 UTC (starling.lan, both shards), from `main` @ `d8559c0e`. They have not been verified on the dev bot. `/stats` is registered globally (`stats: 1574500834404868138`). The orphaned session `8513f4a5` ended at 19:03:51 (`ended unreachable session`). Next: watch the prod logs and run the M02 FOLLOWUP-01 V03–V10 checks in prod, plus V20–V25 from M01 FOLLOWUP-01.
-**Next milestone:** M03 — weekly recap card for `/stats me` and calendar weeks (Monday start, UTC) everywhere. `M03/PLAN.md` is final and `M03/TASKS.md` (T01–T07) is generated, in jj change `xrwltxmu`; execution has not started. Decisions: streaks stay rolling, weekly stats use Monday weeks and calendar months, there's a root-level `image` package (imported as `pomoimage`), no avatar download, and the text fallback mirrors the card without pomodoro, session, or active-day counts. The prototype renderer and the reviewed test PNGs are in the session scratchpad (`card/`, `pngs/`) and will be copied into `cmd/bot/recap` during execution.
-**Pending deploy:** `ptxrtppm`, `kpnqwpkx` (leaderboard top 3 shown as 🥇🥈🥉) and `vttysqxv` (leaderboard rows drop pomodoro counts, the 🔥 marker moves right after the name, and the totals line becomes `Server total: Nh · up/down X% from last week`). In `ptxrtppm`, the session message's "Interval x | n" was 0-based (it showed `0 | 4` during the first pomodoro). It's now 1-based, and during a break it shows the pomodoro that was just completed (the long break shows `4 | 4`). Neither change is pushed yet.
+**Current milestone:** M03 — weekly recap card for `/stats me`; Monday weeks for weekly stats
+**Position:** M03 T01–T07 are implemented, and `go test -race ./...` passes. Nothing is pushed and nothing has run against Discord. Next:
+- user review of the card PNGs (`POMOMO_RECAP_OUT=<dir> go test ./image`);
+- dev-bot verification (M03 FOLLOWUP-01 V01–V09);
+- push and deploy with the pending changes below. There are no migrations or command changes.
+
+Still open from M02: watch the prod logs and run M02 FOLLOWUP-01 V03–V10 in prod, plus M01 FOLLOWUP-01 V20–V25. M02 has been in prod since 2026-11-23 19:03 UTC (from `main` @ `d8559c0e`); `/stats` is registered globally (`stats: 1574500834404868138`).
+**Pending deploy:** `ptxrtppm`, `kpnqwpkx` (leaderboard top 3 shown as 🥇🥈🥉) and `vttysqxv` (leaderboard rows drop pomodoro counts, the 🔥 marker moves right after the name, and the totals line becomes `Server total: Nh · up/down X% from last week`). In `ptxrtppm`, the session message's "Interval x | n" was 0-based (it showed `0 | 4` during the first pomodoro). It's now 1-based, and during a break it shows the pomodoro that was just completed (the long break shows `4 | 4`). None of these are pushed yet; the M03 stack sits on top of them.
 
 ## Deploy / rollback
 
@@ -22,6 +26,11 @@
   - `/stats me` is ephemeral; `/stats server` is a public weekly top 5 with server display names (no mentions), and departed members are omitted.
   - The end message shows duration, pomodoros, and the leaderboard. There's no per-participant message (Discord can't send unsolicited ephemerals).
 
+- M03 (details in `M03/PLAN.md`):
+  - Weekly stats use Monday–Sunday UTC weeks and calendar months: the leaderboard ranking, the server total (compared with last week up to the same point), and the card. 🔥 streaks stay rolling.
+  - `/stats me` is an ephemeral PNG card drawn by the root-level `image` package (imported as `pomoimage`). It shows no counts or tiles, uses an initial badge (no avatar download), and strips names to the glyphs Noto Sans has.
+  - Text fallback: title with fires, date range, and This week · This month · Lifetime.
+
 ## Blockers
 
 - None.
@@ -37,6 +46,11 @@
 - Deploy notes: `bot0` and `bot1` are two shards of one Discord app (both env files register the same command IDs), so one `cmd/register` run covers both. To register without the tokens leaving starling, build `cmd/register` for linux, scp it to starling, and run it with `POMOMO_CONFIG_PATH=~/stacks/pomomo-bot/.env.prod0`.
 - Post-deploy log noise to clean up: `autoshush.go:71` logs `guild … not loaded` at ERRO for each restored participant on every restart (expected, since that's the startup guard); it should be Debug or Warn. Interactions that arrive while sessions are still restoring get "session not found".
 - Open follow-up: no SQLite `busy_timeout` (concurrent writes fail with `SQLITE_BUSY`); see M02 FOLLOWUP-01.
+
+## M03 changes (above the pending deploy changes)
+
+- `xrwltxmu` plan · `zuqmulwo` T02 `image` package · `sztxxkrs` T01 Monday weeks · `syxkqwqk` T03 followup files · `rzxumlks` T04 `GetWeeklyStats` · `zyvylluk` T05 text fallback · `prnqvnzu` T06 `/stats me` card · `wpwsuwnt` T07 follow-up and state.
+- New dependency `golang.org/x/image` (plus `x/text`, indirect). `go mod tidy` needs the sandbox disabled, because the module cache is read-only.
 
 ## Context
 

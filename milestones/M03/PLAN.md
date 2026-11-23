@@ -2,7 +2,7 @@
 
 **Goal:** `/stats me` replies with a rendered PNG "Weekly Recap" card showing an initial badge, the date range, focus time per day, streak fires, and totals. Weekly stats use calendar weeks that always start on Monday (UTC). Streaks stay rolling.
 
-**Status:** Final (2026-11-23).
+**Status:** Final (2026-11-23). Implemented (T01–T07).
 
 ## Background
 
@@ -77,17 +77,17 @@
   - last week = `[WeekStart(now)-7d, now-7d)`.
 - **Messenger:** `disgo.Followup` gains file attachments (e.g. `FollowupWithFiles(files []*discord.File, components ...)`, or a variadic option; decided at task time). It's sent with `IsComponentsV2` and a `MediaGallery` that references `attachment://weekly-recap.png`.
 - **Handler:**
-  - `Stats` for the `me` scope: get the display name, then the weekly stats, then build the `Recap`, then render it.
+  - `Stats` for the `me` scope: get the weekly stats, then build the `Recap`, then render it. The display name comes from the interaction's member (`EffectiveName()`: nickname, then global name, then username), so there's no REST lookup.
   - It sends the card as the deferred ephemeral followup. If rendering or sending fails, it sends the text fallback.
 - **Dependencies and assets:**
   - New dependency: `golang.org/x/image`.
-  - Noto Sans ×3 (OFL, about 1.6 MB) and `fire.png` from Noto Color Emoji (Apache-2.0), with license files.
+  - Noto Sans ×3 (about 1.6 MB) and `fire.png` from Noto Color Emoji, with their license files from Arch's `noto-fonts` and `noto-fonts-emoji` packages (`image/assets/LICENSE-*.txt`).
 
 ## Pitfalls
 
 - **Monday reset:** the leaderboard and "this week" numbers reset at Monday 00:00 UTC, which is Sunday afternoon or evening in the Americas.
 - **Mixed windows:** the bars cover the Monday week, but 🔥 uses the last 7 days, so someone can have 🔥 on a Monday with only one bar. That's expected given rolling streaks.
-- **Render cost:** about 50–100 ms of CPU and about 10 MB of allocations per card at 2×. That's fine at current volume; the defer allows 15 minutes.
+- **Render cost:** measured at about 65 ms of CPU and 35 MB of allocations per card at 2× (`BenchmarkRenderRecap`). That's fine at current volume; the defer allows 15 minutes.
 - **Ephemeral attachments:** the card must be sent as the deferred followup, not as a separate message, or it won't be ephemeral.
 - **Binary size:** grows by about 2 MB (fonts).
 - **Package name:** `image` shadows the standard library in importers, so the bot always imports it with the `pomoimage` alias.

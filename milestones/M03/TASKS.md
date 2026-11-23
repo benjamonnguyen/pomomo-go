@@ -23,4 +23,4 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T07 | | FOLLOWUP-01 (verification steps) and STATE update | T06 | |
+| T07 | Done | FOLLOWUP-01 (verification steps) and STATE update | T06 | |
