@@ -26,8 +26,8 @@
   - 🔥🔥 for 16+ active days in the month
   - 🔥🔥🔥 for 64+ active days in the quarter
 - **`/stats me`** (ephemeral): all-time focus time, pomodoros, and sessions joined; active days this week, month, and quarter; the streak marker; and last active. With no data, the reply says "No pomodoros yet — join a session to start tracking."
-- **`/stats server`** (public): leaderboard of the top 5 for the week, ranked by focus time. Each row shows rank, username, focus time, pomodoros, and the streak marker. Discord markdown has no tables, so rows are list lines. Below the table: server totals for the week (focus time, pomodoros, sessions, active users). With no data, the reply says "No pomodoros this week."
-- **Names, not mentions:** the leaderboard shows plain account usernames (markdown-escaped). It never uses `<@id>` mentions, so nobody gets pinged.
+- **`/stats server`** (public): leaderboard of the top 5 for the week, ranked by focus time. Each row shows rank, server display name, focus time, pomodoros, and the streak marker. Discord markdown has no tables, so rows are list lines. Below the table: server totals for the week (focus time, pomodoros, sessions, active users). With no data, the reply says "No pomodoros this week."
+- **Names, not mentions:** the leaderboard shows server display names (nickname, then global display name, then username; markdown-escaped). It never uses `<@id>` mentions, so nobody gets pinged.
 - **Departed users are omitted** from the leaderboard. The top 5 is filled from the next-ranked users who are still members.
 - **End message:** the farewell message shows the session's duration and completed pomodoros, followed by the server's weekly leaderboard (the same component as `/stats server`). No per-participant message.
 
@@ -44,7 +44,7 @@
 - **Queries:** a `StatsRepo` in `sqlite/` runs aggregate SQL. Active days use `COUNT(DISTINCT date(completed_at, 'unixepoch'))`.
 - **Command:** `pomomo.StatsCommand` is defined in `commands.go` and registered via `cmd/register`. The handler is `Stats` in `discord_event_hooks.go`. Replies use Components v2, matching the session message.
 - Migrations are created with `migrate create -ext sql -dir cmd/bot/migrations -seq <name>`.
-- **Usernames:** the bot has no member cache (no privileged `GuildMembers` intent). The leaderboard query returns the top 25 users by focus time. Members are then fetched over REST with `GetMember` until 5 current members are found. 10007 Unknown Member means the user left, so they're skipped; other errors also skip the row, with a log line.
+- **Display names:** the bot has no member cache (no privileged `GuildMembers` intent). The leaderboard query returns the top 25 users by focus time. Members are then fetched over REST with `GetMember` until 5 current members are found. 10007 Unknown Member means the user left, so they're skipped; other errors also skip the row, with a log line.
 - **Shared components:** the leaderboard and the `me` view are each built by one function, used by both `/stats` and the end message.
 
 ## End message

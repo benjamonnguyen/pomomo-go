@@ -9,7 +9,7 @@ Automated coverage: `go vet` and `go test -race ./...` pass at every M02 change.
 - streak tiers, duration formatting, markdown escaping
 - leaderboard assembly: departed users skipped, partial on lookup error, no mentions
 - `/stats` scope default and ephemerality
-- `Adapter.Username` against a fake REST server
+- `Adapter.DisplayName` against a fake REST server (nickname → global name → username)
 - the end-message summary
 
 Nothing has run against Discord yet.
@@ -25,7 +25,7 @@ Run: `POMOMO_CONFIG_PATH=$HOME/.pomomo/.env.dev go run ./cmd/bot`. Register firs
 | V03 | | Crediting | `/start pomodoro:1 short_break:1`, wait for a pomodoro to complete | A `focus_intervals` row for each participant still in the voice channel; the interval counter advances |
 | V04 | | Interval count survives restart | Restart the bot mid-session | "Interval x \| n" keeps its value after restore |
 | V05 | | `/stats` | Run with no option, then with `scope:me` | Ephemeral "Your stats" with focus time, pomodoros, active days, last active (relative timestamp) |
-| V06 | | `/stats scope:server` | Run it | Public "This week's leaderboard" with plain usernames (underscores render literally), nobody pinged, totals line |
+| V06 | | `/stats scope:server` | Run it | Public "This week's leaderboard" with server display names (nickname if set; markdown characters render literally), nobody pinged, totals line |
 | V07 | | Departed member omitted | Credit a pomodoro to an alt account, kick it, run `/stats scope:server` | The alt isn't listed; the next user moves up |
 | V08 | | End message | Press **End** after at least one pomodoro | Farewell, `**Session complete** · <duration> · N 🍅`, then the weekly leaderboard |
 | V09 | | Skip isn't credited | Press **Skip** during a pomodoro | No new `focus_intervals` row for that pomodoro |

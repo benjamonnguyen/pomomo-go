@@ -63,7 +63,7 @@ func (f *fakeStatsRepo) GetServerTotals(ctx context.Context, guildID string, sin
 // fakeMembers: uids starting with "gone" have left, "err" fail lookup
 type fakeMembers struct{}
 
-func (fakeMembers) Username(gid, uid string) (string, bool, error) {
+func (fakeMembers) DisplayName(gid, uid string) (string, bool, error) {
 	switch {
 	case strings.HasPrefix(uid, "gone"):
 		return "", false, nil

@@ -6,8 +6,9 @@ import (
 	"github.com/disgoorg/disgo/rest"
 )
 
-// Username returns the member's username; inGuild is false if they're no longer a member.
-func (a *Adapter) Username(gid, uid string) (string, bool, error) {
+// DisplayName returns the member's server display name (nickname, global name, then username);
+// inGuild is false if they're no longer a member.
+func (a *Adapter) DisplayName(gid, uid string) (string, bool, error) {
 	ids, err := ParseIDs(gid, uid)
 	if err != nil {
 		return "", false, err
@@ -20,5 +21,5 @@ func (a *Adapter) Username(gid, uid string) (string, bool, error) {
 		}
 		return "", false, err
 	}
-	return m.User.Username, true, nil
+	return m.EffectiveName(), true, nil
 }

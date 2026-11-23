@@ -9,12 +9,16 @@ import (
 	"github.com/disgoorg/disgo/rest"
 )
 
-func TestAdapterUsername(t *testing.T) {
+func TestAdapterDisplayName(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/members/1"):
-			_, _ = w.Write([]byte(`{"user":{"id":"1","username":"tomato_fan"}}`))
+			_, _ = w.Write([]byte(`{"nick":"Tomato Fan","user":{"id":"1","username":"tomato_fan","global_name":"Tomato"}}`))
+		case strings.HasSuffix(r.URL.Path, "/members/4"):
+			_, _ = w.Write([]byte(`{"user":{"id":"4","username":"tomato_fan","global_name":"Tomato"}}`))
+		case strings.HasSuffix(r.URL.Path, "/members/5"):
+			_, _ = w.Write([]byte(`{"user":{"id":"5","username":"tomato_fan"}}`))
 		case strings.HasSuffix(r.URL.Path, "/members/2"):
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"code":10007,"message":"Unknown Member"}`))
@@ -26,13 +30,15 @@ func TestAdapterUsername(t *testing.T) {
 	t.Cleanup(srv.Close)
 	a := NewAdapter(rest.New(rest.NewClient("token", rest.WithURL(srv.URL))), nil, nil)
 
-	if name, inGuild, err := a.Username("9", "1"); err != nil || !inGuild || name != "tomato_fan" {
-		t.Errorf("member: got (%q, %v, %v)", name, inGuild, err)
+	for uid, want := range map[string]string{"1": "Tomato Fan", "4": "Tomato", "5": "tomato_fan"} {
+		if name, inGuild, err := a.DisplayName("9", uid); err != nil || !inGuild || name != want {
+			t.Errorf("member %s: got (%q, %v, %v), want %q", uid, name, inGuild, err, want)
+		}
 	}
-	if _, inGuild, err := a.Username("9", "2"); err != nil || inGuild {
+	if _, inGuild, err := a.DisplayName("9", "2"); err != nil || inGuild {
 		t.Errorf("departed member should be (not in guild, nil err), got (%v, %v)", inGuild, err)
 	}
-	if _, _, err := a.Username("9", "3"); err == nil {
+	if _, _, err := a.DisplayName("9", "3"); err == nil {
 		t.Error("expected error for server failure")
 	}
 }

@@ -24,11 +24,11 @@ type StatsRepo interface {
 	GetServerTotals(ctx context.Context, guildID string, since time.Time) (pomomo.ServerTotals, error)
 }
 
-// MemberLookup resolves usernames; inGuild is false when the user has left the server.
+// MemberLookup resolves server display names; inGuild is false when the user has left the server.
 var _ MemberLookup = (*disgo.Adapter)(nil)
 
 type MemberLookup interface {
-	Username(gid, uid string) (name string, inGuild bool, err error)
+	DisplayName(gid, uid string) (name string, inGuild bool, err error)
 }
 
 // streakMarker returns the highest hot streak tier reached.
@@ -118,10 +118,10 @@ func buildLeaderboard(ctx context.Context, repo StatsRepo, members MemberLookup,
 		if len(rows) == leaderboardSize {
 			break
 		}
-		name, inGuild, err := members.Username(gid, e.UserID)
+		name, inGuild, err := members.DisplayName(gid, e.UserID)
 		if err != nil {
 			// likely lost access to the guild - don't burn a REST call per candidate
-			log.Warn("failed to look up leaderboard username - showing partial leaderboard", "gid", gid, "uid", e.UserID, "err", err)
+			log.Warn("failed to look up leaderboard display name - showing partial leaderboard", "gid", gid, "uid", e.UserID, "err", err)
 			break
 		}
 		if !inGuild {

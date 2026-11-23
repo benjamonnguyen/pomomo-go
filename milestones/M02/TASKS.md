@@ -16,7 +16,7 @@
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
 | T04 | Done | Credit attached participants on pomodoro → break in `sessionManager.updateSession`, in the same transaction | T02, T03 | Restore catch-up, skips, and detached participants aren't credited |
-| T05 | Done | Stats rendering: streak tiers, duration format, `me` view, leaderboard view; username lookup (`GetMember`, skip 10007) | T03 | Plain escaped usernames, no mentions |
+| T05 | Done | Stats rendering: streak tiers, duration format, `me` view, leaderboard view; display name lookup (`GetMember`, skip 10007) | T03 | Escaped server display names, no mentions |
 
 # Phase 4
 

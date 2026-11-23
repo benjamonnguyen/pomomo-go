@@ -17,7 +17,7 @@
   - Stats are per server. A user gets credit only for full pomodoros completed while attached to the session's voice channel.
   - Active days are UTC days; windows are rolling 7/30/90 days.
   - Streak tiers: 🔥 at 4+ days in the week, 🔥🔥 at 16+ in the month, 🔥🔥🔥 at 64+ in the quarter.
-  - `/stats me` is ephemeral; `/stats server` is a public weekly top 5 with plain usernames, and departed members are omitted.
+  - `/stats me` is ephemeral; `/stats server` is a public weekly top 5 with server display names (no mentions), and departed members are omitted.
   - The end message shows duration, pomodoros, and the leaderboard. There's no per-participant message (Discord can't send unsolicited ephemerals).
 
 ## Blockers
@@ -32,7 +32,7 @@
 
 ## M02 changes (above the triage stack)
 
-- `kknmsput` plan/tasks · `lmwqtqvp` T01 migrations · `vlvrmxnu` T02 persist session stats · `kkmumwsv` T03 stats repo · `kktlpulp` T04 crediting (also fixes a `StartSession` data race on the returned session) · `lplntsll` T05 rendering and username lookup · `tsknxxvq` T06 `/stats` · `ovkuznnt` T07 end message · `@` follow-up and state.
+- `kknmsput` plan/tasks · `lmwqtqvp` T01 migrations · `vlvrmxnu` T02 persist session stats · `kkmumwsv` T03 stats repo · `kktlpulp` T04 crediting (also fixes a `StartSession` data race on the returned session) · `lplntsll` T05 rendering and username lookup · `tsknxxvq` T06 `/stats` · `ovkuznnt` T07 end message · `mlsttwsy` follow-up and state · `rpqutnky` server display names on leaderboard.
 - Deploying M02 needs `cmd/register` run for both bots and a DB backup (see Deploy / rollback).
 - Open follow-up: no SQLite `busy_timeout` (concurrent writes fail with `SQLITE_BUSY`); see M02 FOLLOWUP-01.
 
