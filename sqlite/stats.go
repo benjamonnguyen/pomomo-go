@@ -68,6 +68,42 @@ func (r *statsRepo) GetUserStats(ctx context.Context, guildID, userID string, no
 	return s, nil
 }
 
+// GetWeeklyStats returns focus time per day of now's Monday week, month and lifetime totals, and rolling active days.
+func (r *statsRepo) GetWeeklyStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.WeeklyStats, error) {
+	db := r.dbGetter(ctx)
+	query := `SELECT COALESCE(SUM(duration), 0), COALESCE(SUM(CASE WHEN completed_at >= ? THEN duration END), 0), ` + activeDaysCols + `
+	FROM focus_intervals WHERE guild_id = ? AND user_id = ?`
+	args := append([]any{pomomo.MonthStart(now).Unix()}, windowArgs(now)...)
+	args = append(args, guildID, userID)
+
+	var s pomomo.WeeklyStats
+	var lifetimeSecs, monthSecs int64
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&lifetimeSecs, &monthSecs, &s.ActiveDays.Week, &s.ActiveDays.Month, &s.ActiveDays.Quarter); err != nil {
+		return pomomo.WeeklyStats{}, err
+	}
+	s.Lifetime = time.Duration(lifetimeSecs) * time.Second
+	s.Month = time.Duration(monthSecs) * time.Second
+
+	// day index from Monday; completed_at and the week start are both unix seconds in UTC
+	weekStart := pomomo.WeekStart(now).Unix()
+	query = `SELECT (completed_at - ?) / 86400 AS day, SUM(duration)
+	FROM focus_intervals WHERE guild_id = ? AND user_id = ? AND completed_at >= ? AND completed_at < ?
+	GROUP BY day`
+	rows, err := db.QueryContext(ctx, query, weekStart, guildID, userID, weekStart, weekStart+7*86400)
+	if err != nil {
+		return pomomo.WeeklyStats{}, err
+	}
+	defer rows.Close() //nolint
+	for rows.Next() {
+		var day, secs int64
+		if err := rows.Scan(&day, &secs); err != nil {
+			return pomomo.WeeklyStats{}, err
+		}
+		s.Days[day] = time.Duration(secs) * time.Second
+	}
+	return s, rows.Err()
+}
+
 // GetLeaderboard returns users ranked by focus time since Monday.
 func (r *statsRepo) GetLeaderboard(ctx context.Context, guildID string, now time.Time, limit int) ([]pomomo.LeaderboardEntry, error) {
 	week := pomomo.WeekStart(now).Unix()

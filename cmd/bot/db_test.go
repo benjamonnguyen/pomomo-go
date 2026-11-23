@@ -144,6 +144,48 @@ func TestStatsRepo(t *testing.T) {
 	}
 }
 
+func TestGetWeeklyStats(t *testing.T) {
+	_, dbGetter := newTestDB(t)
+	repo := sqlite.NewStatsRepo(dbGetter, *log.Default())
+	ctx := t.Context()
+	at := func(m time.Month, d, h, min int) time.Time { return time.Date(2026, m, d, h, min, 0, 0, time.UTC) }
+	n := 0
+	pomodoro := func(uid string, mins int, completed time.Time) pomomo.FocusIntervalRecord {
+		n++
+		return pomomo.FocusIntervalRecord{GuildID: "g", UserID: uid, SessionID: "s", Pomodoro: n, Duration: time.Duration(mins) * time.Minute, CompletedAt: completed}
+	}
+	if err := repo.InsertFocusIntervals(ctx,
+		pomodoro("u", 25, at(10, 15, 12, 0)),  // lifetime only
+		pomodoro("u", 20, at(11, 22, 23, 59)), // Sunday before the week: month, not week
+		pomodoro("u", 20, at(11, 23, 0, 0)),   // Monday 00:00
+		pomodoro("u", 25, at(11, 23, 23, 59)), // Monday 23:59
+		pomodoro("u", 50, at(11, 25, 9, 0)),   // Wednesday
+		pomodoro("u", 30, at(11, 29, 23, 59)), // Sunday 23:59
+		pomodoro("u", 40, at(11, 30, 0, 0)),   // next Monday: excluded
+		pomodoro("other", 60, at(11, 24, 12, 0)),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repo.GetWeeklyStats(ctx, "g", "u", at(11, 26, 15, 0)) // Thursday
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := func(mins int) time.Duration { return time.Duration(mins) * time.Minute }
+	want := pomomo.WeeklyStats{
+		Days:       [7]time.Duration{m(45), 0, m(50), 0, 0, 0, m(30)},
+		Month:      m(185),
+		Lifetime:   m(210),
+		ActiveDays: pomomo.ActiveDays{Week: 5, Month: 5, Quarter: 6}, // rolling from Nov 20, Oct 28, Aug 29 with no upper bound, so test rows after now count
+	}
+	if got != want {
+		t.Errorf("weekly stats:\n got %+v\nwant %+v", got, want)
+	}
+	if empty, err := repo.GetWeeklyStats(ctx, "g", "nobody", at(11, 26, 15, 0)); err != nil || empty != (pomomo.WeeklyStats{}) {
+		t.Errorf("expected empty stats, got %+v, %v", empty, err)
+	}
+}
+
 func TestWeekStart(t *testing.T) {
 	day := func(y int, m time.Month, d, h, min int) time.Time { return time.Date(y, m, d, h, min, 0, 0, time.UTC) }
 	for now, want := range map[time.Time]time.Time{

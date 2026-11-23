@@ -48,6 +48,14 @@ type UserStats struct {
 	ActiveDays ActiveDays
 }
 
+// WeeklyStats is a user's Monday week in a server, plus month and lifetime totals.
+type WeeklyStats struct {
+	Days       [7]time.Duration // focus time per UTC day, Monday first
+	Month      time.Duration    // since the 1st of the month
+	Lifetime   time.Duration
+	ActiveDays ActiveDays // rolling, for streaks
+}
+
 // LeaderboardEntry holds a user's stats for the week, starting Monday.
 type LeaderboardEntry struct {
 	UserID     string

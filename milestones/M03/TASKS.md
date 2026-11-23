@@ -10,7 +10,7 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T04 | | `GetWeeklyStats` in `sqlite/stats.go`: per-day sums for the Monday week; month and lifetime focus; rolling active days. Replaces `GetUserStats`. | T01 | Test per-day bucketing across UTC midnight and the week boundary |
+| T04 | Done | `GetWeeklyStats` in `sqlite/stats.go`: per-day sums for the Monday week; month and lifetime focus; rolling active days. `GetUserStats` is removed in T06 once nothing uses it. | T01 | Test per-day bucketing across UTC midnight and the week boundary |
 
 # Phase 3
 
