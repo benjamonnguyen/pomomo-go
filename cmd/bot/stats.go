@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -21,7 +22,7 @@ const (
 type StatsRepo interface {
 	GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error)
 	GetLeaderboard(ctx context.Context, guildID string, now time.Time, limit int) ([]pomomo.LeaderboardEntry, error)
-	GetServerTotals(ctx context.Context, guildID string, since time.Time) (pomomo.ServerTotals, error)
+	GetServerTotals(ctx context.Context, guildID string, since, until time.Time) (pomomo.ServerTotals, error)
 }
 
 // MemberLookup resolves server display names; inGuild is false when the user has left the server.
@@ -51,6 +52,30 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dm", m)
 	}
 	return fmt.Sprintf("%dh %dm", h, m)
+}
+
+// formatTotal rounds down to whole hours once past an hour
+func formatTotal(d time.Duration) string {
+	if d < time.Hour {
+		return formatDuration(d)
+	}
+	return fmt.Sprintf("%dh", int(d.Hours()))
+}
+
+// weekOverWeek describes the change from last week; empty without a baseline.
+func weekOverWeek(curr, prev time.Duration) string {
+	if prev <= 0 {
+		return ""
+	}
+	pct := int(math.Round(float64(curr-prev) / float64(prev) * 100))
+	switch {
+	case pct > 0:
+		return fmt.Sprintf("up %d%% from last week", pct)
+	case pct < 0:
+		return fmt.Sprintf("down %d%% from last week", -pct)
+	default:
+		return "same as last week"
+	}
 }
 
 var markdownEscaper = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `_`, `\_`, `~`, `\~`, "`", "\\`", `|`, `\|`, `>`, `\>`, `#`, `\#`, `-`, `\-`)
@@ -100,20 +125,23 @@ type leaderboardRow struct {
 	Name string
 }
 
-func LeaderboardComponents(rows []leaderboardRow, totals pomomo.ServerTotals) []discord.LayoutComponent {
+func LeaderboardComponents(rows []leaderboardRow, thisWeek, lastWeek pomomo.ServerTotals) []discord.LayoutComponent {
 	if len(rows) == 0 {
 		return []discord.LayoutComponent{TextDisplay("No pomodoros this week.")}
 	}
 	lines := []string{"### This week's leaderboard"}
 	for i, r := range rows {
-		line := fmt.Sprintf("%s **%s** — %s · %d 🍅", rankLabel(i), escapeMarkdown(r.Name), formatDuration(r.FocusTime), r.Pomodoros)
+		name := "**" + escapeMarkdown(r.Name) + "**"
 		if marker := streakMarker(r.ActiveDays); marker != "" {
-			line += " " + marker
+			name += " " + marker
 		}
-		lines = append(lines, line)
+		lines = append(lines, fmt.Sprintf("%s %s — %s", rankLabel(i), name, formatDuration(r.FocusTime)))
 	}
-	lines = append(lines, fmt.Sprintf("-# This week: %s focused · %d 🍅 · %d sessions · %d members",
-		formatDuration(totals.FocusTime), totals.Pomodoros, totals.Sessions, totals.Users))
+	total := "Server total: " + formatTotal(thisWeek.FocusTime)
+	if change := weekOverWeek(thisWeek.FocusTime, lastWeek.FocusTime); change != "" {
+		total += " · " + change
+	}
+	lines = append(lines, "", total)
 	return []discord.LayoutComponent{statsContainer(strings.Join(lines, "\n"))}
 }
 
@@ -139,9 +167,14 @@ func buildLeaderboard(ctx context.Context, repo StatsRepo, members MemberLookup,
 		}
 		rows = append(rows, leaderboardRow{LeaderboardEntry: e, Name: name})
 	}
-	totals, err := repo.GetServerTotals(ctx, gid, pomomo.WindowStart(now, pomomo.WeekDays))
+	weekStart := pomomo.WindowStart(now, pomomo.WeekDays)
+	thisWeek, err := repo.GetServerTotals(ctx, gid, weekStart, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server totals: %w", err)
 	}
-	return LeaderboardComponents(rows, totals), nil
+	lastWeek, err := repo.GetServerTotals(ctx, gid, weekStart.AddDate(0, 0, -pomomo.WeekDays), weekStart)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last week's server totals: %w", err)
+	}
+	return LeaderboardComponents(rows, thisWeek, lastWeek), nil
 }

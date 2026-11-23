@@ -122,12 +122,21 @@ func TestStatsRepo(t *testing.T) {
 		t.Errorf("limit not applied: %+v", board)
 	}
 
-	totals, err := repo.GetServerTotals(ctx, "g", pomomo.WindowStart(now, pomomo.WeekDays))
+	totals, err := repo.GetServerTotals(ctx, "g", pomomo.WindowStart(now, pomomo.WeekDays), now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if totals != (pomomo.ServerTotals{FocusTime: 80 * time.Minute, Pomodoros: 4, Sessions: 3, Users: 2}) {
 		t.Errorf("unexpected totals: %+v", totals)
+	}
+	// previous week: only alice's pomodoro from 8 days ago; until is exclusive
+	weekStart := pomomo.WindowStart(now, pomomo.WeekDays)
+	prev, err := repo.GetServerTotals(ctx, "g", weekStart.AddDate(0, 0, -pomomo.WeekDays), weekStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prev.Pomodoros != 1 || prev.FocusTime != 20*time.Minute {
+		t.Errorf("unexpected previous week totals: %+v", prev)
 	}
 }
 

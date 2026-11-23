@@ -100,13 +100,14 @@ func (r *statsRepo) GetLeaderboard(ctx context.Context, guildID string, now time
 	return entries, rows.Err()
 }
 
-func (r *statsRepo) GetServerTotals(ctx context.Context, guildID string, since time.Time) (pomomo.ServerTotals, error) {
+// GetServerTotals sums pomodoros completed in [since, until).
+func (r *statsRepo) GetServerTotals(ctx context.Context, guildID string, since, until time.Time) (pomomo.ServerTotals, error) {
 	query := `SELECT COALESCE(SUM(duration), 0), COUNT(*), COUNT(DISTINCT session_id), COUNT(DISTINCT user_id)
-	FROM focus_intervals WHERE guild_id = ? AND completed_at >= ?`
+	FROM focus_intervals WHERE guild_id = ? AND completed_at >= ? AND completed_at < ?`
 
 	var focusSecs int64
 	var t pomomo.ServerTotals
-	row := r.dbGetter(ctx).QueryRowContext(ctx, query, guildID, since.Unix())
+	row := r.dbGetter(ctx).QueryRowContext(ctx, query, guildID, since.Unix(), until.Unix())
 	if err := row.Scan(&focusSecs, &t.Pomodoros, &t.Sessions, &t.Users); err != nil {
 		return pomomo.ServerTotals{}, err
 	}

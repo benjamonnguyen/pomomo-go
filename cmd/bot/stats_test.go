@@ -56,8 +56,12 @@ func (f *fakeStatsRepo) GetLeaderboard(ctx context.Context, guildID string, now 
 	return f.entries, nil
 }
 
-func (f *fakeStatsRepo) GetServerTotals(ctx context.Context, guildID string, since time.Time) (pomomo.ServerTotals, error) {
-	return pomomo.ServerTotals{FocusTime: time.Hour, Pomodoros: 3, Sessions: 1, Users: 2}, nil
+// GetServerTotals returns 214h this week and ~181h last week (up 18%)
+func (f *fakeStatsRepo) GetServerTotals(ctx context.Context, guildID string, since, until time.Time) (pomomo.ServerTotals, error) {
+	if until.Sub(since) < pomomo.WeekDays*24*time.Hour { // this week's window ends now, mid-day
+		return pomomo.ServerTotals{FocusTime: 214*time.Hour + 20*time.Minute}, nil
+	}
+	return pomomo.ServerTotals{FocusTime: 181*time.Hour + 30*time.Minute}, nil
 }
 
 // fakeMembers: uids starting with "gone" have left, "err" fail lookup
@@ -99,12 +103,12 @@ func TestBuildLeaderboard(t *testing.T) {
 	if repo.limit != leaderboardCandidates {
 		t.Errorf("expected %d candidates, got %d", leaderboardCandidates, repo.limit)
 	}
-	for _, want := range []string{`🥇 **name\\_a** — 20m · 1 🍅 🔥`, `🥈 **name\\_b**`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "This week: 1h 0m focused"} {
+	for _, want := range []string{`🥇 **name\\_a** 🔥 — 20m`, `🥈 **name\\_b** — 20m`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "Server total: 214h · up 18% from last week"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("leaderboard missing %q:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"gone1", "name\\\\_f", `\u003c@`} {
+	for _, unwanted := range []string{"gone1", "name\\\\_f", `\u003c@`, "🍅"} {
 		if strings.Contains(text, unwanted) {
 			t.Errorf("leaderboard shouldn't contain %q:\n%s", unwanted, text)
 		}
@@ -195,6 +199,29 @@ func TestStatsCommand(t *testing.T) {
 		}
 		if text := componentsText(t, dm.sent); !strings.Contains(text, tt.want) {
 			t.Errorf("%s: reply missing %q:\n%s", tt.name, tt.want, text)
+		}
+	}
+}
+
+func TestWeekOverWeek(t *testing.T) {
+	tests := []struct {
+		curr, prev time.Duration
+		want       string
+	}{
+		{10 * time.Hour, 0, ""},
+		{118 * time.Hour, 100 * time.Hour, "up 18% from last week"},
+		{95 * time.Hour, 100 * time.Hour, "down 5% from last week"},
+		{100 * time.Hour, 100 * time.Hour, "same as last week"},
+		{0, 100 * time.Hour, "down 100% from last week"},
+	}
+	for _, tt := range tests {
+		if got := weekOverWeek(tt.curr, tt.prev); got != tt.want {
+			t.Errorf("weekOverWeek(%v, %v) = %q, want %q", tt.curr, tt.prev, got, tt.want)
+		}
+	}
+	for d, want := range map[time.Duration]string{45 * time.Minute: "45m", 214*time.Hour + 50*time.Minute: "214h"} {
+		if got := formatTotal(d); got != want {
+			t.Errorf("formatTotal(%v) = %q, want %q", d, got, want)
 		}
 	}
 }
