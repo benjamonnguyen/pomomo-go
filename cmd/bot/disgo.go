@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
@@ -92,6 +93,7 @@ func SessionMessageComponents(s models.Session) []discord.LayoutComponent {
 	if s.Record.Status == pomomo.SessionEnded {
 		return []discord.LayoutComponent{
 			TextDisplay(getFarewell()),
+			TextDisplay(fmt.Sprintf("**Session complete** · %s · %d 🍅", formatDuration(time.Since(s.StartedAt)), s.Record.CompletedPomodoros)),
 		}
 	}
 	// action row
@@ -196,6 +198,5 @@ func getGreeting() string {
 }
 
 func getFarewell() string {
-	// TODO display stats in end message
 	return farewells[rand.Intn(len(farewells))]
 }

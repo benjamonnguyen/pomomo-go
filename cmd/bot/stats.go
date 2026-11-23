@@ -120,8 +120,9 @@ func buildLeaderboard(ctx context.Context, repo StatsRepo, members MemberLookup,
 		}
 		name, inGuild, err := members.Username(gid, e.UserID)
 		if err != nil {
-			log.Warn("failed to look up leaderboard username - omitting", "gid", gid, "uid", e.UserID, "err", err)
-			continue
+			// likely lost access to the guild - don't burn a REST call per candidate
+			log.Warn("failed to look up leaderboard username - showing partial leaderboard", "gid", gid, "uid", e.UserID, "err", err)
+			break
 		}
 		if !inGuild {
 			continue

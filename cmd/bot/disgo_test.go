@@ -74,8 +74,14 @@ func TestSessionMessageComponents(t *testing.T) {
 	}
 
 	s.Record.Status = pomomo.SessionEnded
-	if ended := SessionMessageComponents(s); len(ended) != 1 {
-		t.Errorf("ended session should only show farewell, got %d components", len(ended))
+	s.Record.CompletedPomodoros = 3
+	s.StartedAt = time.Now().Add(-100 * time.Minute)
+	ended := SessionMessageComponents(s)
+	if len(ended) != 2 {
+		t.Fatalf("ended session should show farewell and summary, got %d components", len(ended))
+	}
+	if summary := ended[1].(discord.TextDisplayComponent).Content; summary != "**Session complete** · 1h 40m · 3 🍅" {
+		t.Errorf("unexpected summary: %q", summary)
 	}
 }
 

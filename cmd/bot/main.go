@@ -168,7 +168,13 @@ func main() {
 			var wg sync.WaitGroup
 			wg.Go(func() {
 				// handle channel message cleanup
-				_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, SessionMessageComponents(curr)...)
+				components := SessionMessageComponents(curr)
+				if leaderboard, err := buildLeaderboard(ctx, statsRepo, discordAdapter, curr.Record.GuildID, time.Now()); err != nil {
+					log.Error("failed to build leaderboard for end message", "sid", curr.ID, "err", err)
+				} else {
+					components = append(components, leaderboard...)
+				}
+				_, err := dm.EditChannelMessage(curr.Record.TextCID, curr.Record.MessageID, components...)
 				if err != nil {
 					log.Error("failed to edit discord channel message", "textCID", curr.Record.TextCID, "messageID", curr.Record.MessageID, "sessionID", curr.ID, "err", err)
 				}
@@ -234,7 +240,6 @@ func main() {
 
 		wg.Go(func() {
 			autoshusher.Autoshush(ctx, participants, before, curr)
-			// TODO persist participant stats
 		})
 
 		wg.Wait()

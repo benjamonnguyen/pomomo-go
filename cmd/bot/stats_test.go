@@ -85,7 +85,7 @@ func componentsText(t *testing.T, components []discord.LayoutComponent) string {
 
 func TestBuildLeaderboard(t *testing.T) {
 	var entries []pomomo.LeaderboardEntry
-	for _, uid := range []string{"a", "gone1", "b", "err1", "c", "d", "e", "f"} {
+	for _, uid := range []string{"a", "gone1", "b", "c", "d", "e", "f"} {
 		entries = append(entries, pomomo.LeaderboardEntry{UserID: uid, FocusTime: 20 * time.Minute, Pomodoros: 1})
 	}
 	entries[0].ActiveDays.Week = 4
@@ -104,10 +104,21 @@ func TestBuildLeaderboard(t *testing.T) {
 			t.Errorf("leaderboard missing %q:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"gone1", "err1", "name\\\\_f", `\u003c@`} {
+	for _, unwanted := range []string{"gone1", "name\\\\_f", `\u003c@`} {
 		if strings.Contains(text, unwanted) {
 			t.Errorf("leaderboard shouldn't contain %q:\n%s", unwanted, text)
 		}
+	}
+
+	// lookup errors stop further lookups and show what was resolved so far
+	partial, err := buildLeaderboard(t.Context(), &fakeStatsRepo{entries: []pomomo.LeaderboardEntry{
+		{UserID: "a", FocusTime: time.Hour}, {UserID: "err1", FocusTime: time.Hour}, {UserID: "b", FocusTime: time.Hour},
+	}}, fakeMembers{}, "g", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := componentsText(t, partial); !strings.Contains(text, `name\\_a`) || strings.Contains(text, `name\\_b`) {
+		t.Errorf("expected partial leaderboard with only a:\n%s", text)
 	}
 
 	empty, _ := buildLeaderboard(t.Context(), &fakeStatsRepo{}, fakeMembers{}, "g", time.Now())
