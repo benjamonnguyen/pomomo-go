@@ -2,7 +2,7 @@
 
 | #   | Status | Task | Dependencies | Notes |
 | --- | ------ | ---- | ------------ | ----- |
-| T01 | | Migrations: `completed_pomodoros` and `skips` columns on `sessions`; `focus_intervals` table and indexes | | Use `migrate create -ext sql -dir cmd/bot/migrations -seq <name>` |
+| T01 | Done | Migrations: `completed_pomodoros` and `skips` columns on `sessions`; `focus_intervals` table and indexes | | Use `migrate create -ext sql -dir cmd/bot/migrations -seq <name>` |
 
 # Phase 2
 
