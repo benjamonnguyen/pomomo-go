@@ -282,10 +282,10 @@ func Stats(ctx context.Context, repo StatsRepo, members MemberLookup, dm Discord
 
 const (
 	statsErrMsg = "Pomomo couldn't load stats. Try again in a bit or reach out to support."
-	recapFile   = "weekly-recap.png"
+	recapFile   = "pomomo-stats.png"
 )
 
-// sendRecap sends the user's weekly recap card, or its text version if the card can't be sent.
+// sendRecap sends the user's stats card, or its text version if the card can't be sent.
 func sendRecap(ctx context.Context, repo StatsRepo, dm DiscordMessenger, followup disgo.Followup, it discord.Interaction, gid string, member *discord.ResolvedMember, now time.Time) {
 	s, err := repo.GetWeeklyStats(ctx, gid, member.User.ID.String(), now)
 	if err != nil {
@@ -295,12 +295,12 @@ func sendRecap(ctx context.Context, repo StatsRepo, dm DiscordMessenger, followu
 		}
 		return
 	}
-	recap := newRecap(member.EffectiveName(), s, now)
+	recap := newRecap(s, now)
 	card, err := pomoimage.RenderRecap(recap)
 	if err == nil {
 		gallery := discord.NewMediaGallery(discord.MediaGalleryItem{
 			Media:       discord.UnfurledMediaItem{URL: "attachment://" + recapFile},
-			Description: "Weekly recap: " + pomoimage.FormatDuration(recap.Week()) + " of focus this week",
+			Description: "Pomomo stats: " + pomoimage.FormatDuration(recap.Week()) + " of focus time this week",
 		})
 		file := discord.NewFile(recapFile, "", bytes.NewReader(card))
 		if _, err = dm.FollowupWithFiles(it, []*discord.File{file}, gallery); err == nil {

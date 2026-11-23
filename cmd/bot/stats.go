@@ -96,10 +96,9 @@ func statsContainer(content string) discord.ContainerComponent {
 	}
 }
 
-// newRecap builds the recap card's data; name is the user's server display name.
-func newRecap(name string, s pomomo.WeeklyStats, now time.Time) pomoimage.Recap {
+// newRecap builds the stats card's data.
+func newRecap(s pomomo.WeeklyStats, now time.Time) pomoimage.Recap {
 	return pomoimage.Recap{
-		Name:      name,
 		WeekStart: pomomo.WeekStart(now),
 		Now:       now,
 		Days:      s.Days,
@@ -109,20 +108,16 @@ func newRecap(name string, s pomomo.WeeklyStats, now time.Time) pomoimage.Recap 
 	}
 }
 
-// RecapComponents is the text version of the recap card, sent when the card can't be.
+// RecapComponents is the text version of the stats card, sent when the card can't be.
 func RecapComponents(r pomoimage.Recap) []discord.LayoutComponent {
-	title := "Your Weekly Recap"
-	if name := strings.TrimSpace(r.Name); name != "" {
-		title = escapeMarkdown(name) + "'s Weekly Recap"
-	}
+	title := "Your Pomomo Stats"
 	if marker := strings.Repeat("🔥", r.Streak); marker != "" {
 		title += " " + marker
 	}
-	weekEnd := r.WeekStart.AddDate(0, 0, 6)
 	lines := []string{
 		"### " + title,
-		"-# " + r.WeekStart.Format("Mon, Jan 2") + " – " + weekEnd.Format("Mon, Jan 2") + " UTC",
-		"**Total focus**",
+		"-# " + pomoimage.WeekRange(r.WeekStart),
+		"**Total focus time**",
 		fmt.Sprintf("This week %s · This month %s · Lifetime %s",
 			pomoimage.FormatDuration(r.Week()), pomoimage.FormatDuration(r.Month), pomoimage.FormatHours(r.Lifetime)),
 	}
@@ -144,9 +139,9 @@ type leaderboardRow struct {
 	Name string
 }
 
-// weekRange formats the Monday week as "Nov 23 – Nov 29 UTC".
+// weekRange formats the Monday week as "Nov 23 – Nov 29".
 func weekRange(weekStart time.Time) string {
-	return weekStart.Format("Jan 2") + " – " + weekStart.AddDate(0, 0, 6).Format("Jan 2") + " UTC"
+	return weekStart.Format("Jan 2") + " – " + weekStart.AddDate(0, 0, 6).Format("Jan 2")
 }
 
 func LeaderboardComponents(rows []leaderboardRow, weekStart time.Time, thisWeek, lastWeek pomomo.ServerTotals) []discord.LayoutComponent {

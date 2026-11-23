@@ -13,15 +13,14 @@ func TestRenderRecap(t *testing.T) {
 	m := func(min int) time.Duration { return time.Duration(min) * time.Minute }
 	monday := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
 	tests := map[string]Recap{
-		"empty-monday": {Name: "ben_jamon", Now: monday.Add(9 * time.Hour), Month: m(1310), Lifetime: m(4120)},
-		"midweek-1fire": {Name: "ben_jamon", Now: monday.AddDate(0, 0, 3).Add(15 * time.Hour), Streak: 1,
+		"empty-monday": {Now: monday.Add(9 * time.Hour), Month: m(1310), Lifetime: m(4120)},
+		"midweek-1fire": {Now: monday.AddDate(0, 0, 3).Add(15 * time.Hour), Streak: 1,
 			Days: [7]time.Duration{m(50), m(100), m(25), m(75)}, Month: m(1560), Lifetime: m(4370)},
-		"fullweek-2fire": {Name: "Tomato Fan", Now: monday.AddDate(0, 0, 6).Add(20 * time.Hour), Streak: 2,
+		"fullweek-2fire": {Now: monday.AddDate(0, 0, 6).Add(20 * time.Hour), Streak: 2,
 			Days: [7]time.Duration{m(100), m(150), 0, m(225), m(50), m(25), m(175)}, Month: m(2950), Lifetime: m(9800)},
-		"heavy-3fire-longname": {Name: "Sir Reginald Pomodoro the Third of Focusville", Now: monday.AddDate(0, 0, 6).Add(22 * time.Hour), Streak: 3,
+		"heavy-3fire": {Now: monday.AddDate(0, 0, 6).Add(22 * time.Hour), Streak: 3,
 			Days: [7]time.Duration{m(400), m(525), m(475), m(600), m(350), m(250), m(450)}, Month: m(10890), Lifetime: m(72300)},
-		"unsupported-name": {Name: "トマト 🍅 Fan", Now: monday.Add(12 * time.Hour), Days: [7]time.Duration{m(25)}, Lifetime: m(25)},
-		"empty-name":       {Name: "トマト🍅", Now: monday.Add(12 * time.Hour), Streak: 9},
+		"streak-out-of-range": {Now: monday.Add(12 * time.Hour), Streak: 9},
 	}
 	out := os.Getenv("POMOMO_RECAP_OUT") // set to write PNGs for review
 	for name, r := range tests {
@@ -41,20 +40,6 @@ func TestRenderRecap(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(out, name+".png"), b, 0o644); err != nil {
 				t.Fatal(err)
 			}
-		}
-	}
-}
-
-func TestDrawable(t *testing.T) {
-	for in, want := range map[string]string{
-		"ben_jamon":      "ben_jamon",
-		"トマト 🍅 Fan":      "Fan",
-		"Zoë  Ωmega":     "Zoë Ωmega",
-		"🍅":              "",
-		"tab\tseparated": "tab separated",
-	} {
-		if got := drawable(in); got != want {
-			t.Errorf("drawable(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

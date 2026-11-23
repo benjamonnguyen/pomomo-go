@@ -11,19 +11,17 @@ import (
 	"math"
 	"strings"
 	"time"
-	"unicode"
 
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/image/vector"
 )
 
 // recap card size in logical pixels; rendered at scale for crisp display
 const (
-	recapW, recapH = 900, 440
+	recapW, recapH = 900, 382
 	scale          = 2
 )
 
@@ -48,7 +46,6 @@ var (
 
 // Recap is a user's week in a server. Days are UTC days starting Monday.
 type Recap struct {
-	Name      string
 	WeekStart time.Time // Monday 00:00 UTC
 	Now       time.Time
 	Days      [7]time.Duration
@@ -64,9 +61,7 @@ func (r Recap) Week() (total time.Duration) {
 	return total
 }
 
-var streakCaptions = []string{"NO STREAK YET", "4+ DAYS THIS WEEK", "16+ DAYS THIS MONTH", "64+ DAYS THIS QUARTER"}
-
-// RenderRecap draws the weekly recap card as a PNG.
+// RenderRecap draws the user's "Pomomo Stats" card for the week as a PNG.
 func RenderRecap(r Recap) ([]byte, error) {
 	c := newCanvas(recapW, recapH)
 	fire, err := png.Decode(bytes.NewReader(firePNG))
@@ -80,43 +75,33 @@ func RenderRecap(r Recap) ([]byte, error) {
 	c.roundRect(24, 24, recapW-48, recapH-48, 10, colCard)
 	c.roundRect(24, 24, 8, recapH-48, 0, colAccent)
 
-	// header: initial badge, title, date range
-	name := drawable(r.Name)
-	initial, title := "?", "Your Weekly Recap"
-	if name != "" {
-		initial = strings.ToUpper(string([]rune(name)[:1]))
-		titleFace := c.face(bold, 29)
-		title = c.ellipsize(titleFace, name, 680-156-c.measure(titleFace, "'s Weekly Recap")) + "'s Weekly Recap"
-	}
-	c.roundRect(58, 55, 76, 76, 38, colAccent)
-	c.text(c.face(bold, 34), initial, 96, 105, colText, alignCenter)
-	c.text(c.face(bold, 29), title, 156, 85, colText, alignLeft)
-	weekEnd := r.WeekStart.AddDate(0, 0, 6)
-	c.text(c.face(regular, 15), r.WeekStart.Format("Mon, Jan 2")+" – "+weekEnd.Format("Mon, Jan 2")+" UTC", 156, 112, colMuted, alignLeft)
-
-	// streak: earned tiers in color, the rest as grey ghosts, right aligned
+	// streak: earned tiers in color from the left, the rest as grey ghosts; the group is right aligned
 	ghost := silhouette(fire, colMuted)
 	fireH := 34.0
 	fireW := fireH * float64(fire.Bounds().Dx()) / float64(fire.Bounds().Dy())
+	firesX := 845 - 3*fireW - 2*6
 	for i := range 3 {
-		x := 845 - fireW*float64(3-i) - 6*float64(2-i)
-		if i >= 3-r.Streak {
+		x := firesX + float64(i)*(fireW+6)
+		if i < r.Streak {
 			c.image(fire, x, 62, fireW, fireH, 1)
 		} else {
 			c.image(ghost, x, 62, fireW, fireH, 0.18)
 		}
 	}
-	c.text(c.face(regular, 12), streakCaptions[r.Streak], 845, 116, colMuted, alignRight)
+
+	// header: title and date range
+	c.text(c.face(bold, 29), "Your Pomomo Stats", 58, 85, colText, alignLeft)
+	c.text(c.face(regular, 15), WeekRange(r.WeekStart), 58, 112, colMuted, alignLeft)
 
 	// weekly stats: Mon–Sun bars scaled to the best day, at least 1h
-	c.text(c.face(bold, 14), "WEEKLY STATS", 58, 180, colMuted, alignLeft)
+	c.text(c.face(bold, 14), "WEEKLY STATS", 58, 150, colMuted, alignLeft)
 	peak := time.Hour
 	for _, d := range r.Days {
 		peak = max(peak, d)
 	}
 	today := int(r.Now.Sub(r.WeekStart).Hours() / 24)
 	dayFace, todayFace, valueFace := c.face(regular, 11), c.face(bold, 11), c.face(semibold, 11)
-	const top, bottom = 196.0, 320.0
+	const top, bottom = 166.0, 290.0
 	for i, d := range r.Days {
 		x := 58 + float64(i)*79.3
 		future := i > today
@@ -140,40 +125,38 @@ func RenderRecap(r Recap) ([]byte, error) {
 		day := strings.ToUpper(r.WeekStart.AddDate(0, 0, i).Format("Mon"))
 		switch {
 		case i == today:
-			c.text(todayFace, day, x+32, 346, colAccent, alignCenter)
+			c.text(todayFace, day, x+32, 316, colAccent, alignCenter)
 		case future:
-			c.text(dayFace, day, x+32, 346, colFaint, alignCenter)
+			c.text(dayFace, day, x+32, 316, colFaint, alignCenter)
 		default:
-			c.text(dayFace, day, x+32, 346, colMuted, alignCenter)
+			c.text(dayFace, day, x+32, 316, colMuted, alignCenter)
 		}
 	}
 
 	// total focus panel
-	c.roundRect(630, 180, 214, 176, 8, colTile)
-	c.text(c.face(bold, 11), "TOTAL FOCUS", 646, 206, colMuted, alignLeft)
+	c.roundRect(630, 150, 214, 176, 8, colTile)
+	c.text(c.face(bold, 11), "TOTAL FOCUS TIME", 646, 176, colMuted, alignLeft)
 	label, value := c.face(regular, 11), c.face(bold, 13)
 	for i, row := range [][2]string{
 		{"This week", FormatDuration(r.Week())},
 		{"This month", FormatDuration(r.Month)},
 		{"Lifetime", FormatHours(r.Lifetime)},
 	} {
-		y := 236 + float64(i)*42
+		y := 206 + float64(i)*42
 		c.text(label, row[0], 646, y, colText, alignLeft)
 		c.text(value, row[1], 646, y+18, colText, alignLeft)
 	}
-
-	// footer
-	foot := c.face(regular, 12)
-	if r.Week() == 0 {
-		c.text(foot, "A fresh week is a fresh start.", 58, 392, colText, alignLeft)
-	}
-	c.text(foot, "Pomomo", 845, 392, colText, alignRight)
 
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, c.img); err != nil {
 		return nil, fmt.Errorf("failed to encode png: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// WeekRange formats the Monday week as "Mon, Nov 23 – Sun, Nov 29" (UTC days).
+func WeekRange(weekStart time.Time) string {
+	return weekStart.Format("Mon, Jan 2") + " – " + weekStart.AddDate(0, 0, 6).Format("Mon, Jan 2")
 }
 
 // FormatDuration formats d as "2h 40m", "2h" or "45m".
@@ -261,22 +244,6 @@ func (c *canvas) face(f *opentype.Font, size float64) font.Face {
 	return face
 }
 
-// drawable drops runes the fonts have no glyph for (CJK, emoji, joiners) and trims the result.
-func drawable(s string) string {
-	var buf sfnt.Buffer
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			b.WriteRune(' ')
-			continue
-		}
-		if i, err := bold.GlyphIndex(&buf, r); err == nil && i != 0 && unicode.IsPrint(r) {
-			b.WriteRune(r)
-		}
-	}
-	return strings.Join(strings.Fields(b.String()), " ")
-}
-
 func (c *canvas) roundRect(x, y, w, h, r float64, col color.Color) {
 	r = math.Min(r, math.Min(w, h)/2)
 	// rasterize only the rect's bounding box, in its own coordinates
@@ -323,16 +290,4 @@ func (c *canvas) text(f font.Face, s string, x, y float64, col color.Color, a al
 	}
 	d := font.Drawer{Dst: c.img, Src: image.NewUniform(col), Face: f, Dot: fixed.P(int(x*scale), int(y*scale))}
 	d.DrawString(s)
-}
-
-// ellipsize trims s with … until it fits in maxW
-func (c *canvas) ellipsize(f font.Face, s string, maxW float64) string {
-	if c.measure(f, s) <= maxW {
-		return s
-	}
-	r := []rune(s)
-	for len(r) > 0 && c.measure(f, string(r)+"…") > maxW {
-		r = r[:len(r)-1]
-	}
-	return strings.TrimSpace(string(r)) + "…"
 }

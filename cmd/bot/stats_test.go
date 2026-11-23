@@ -115,7 +115,7 @@ func TestBuildLeaderboard(t *testing.T) {
 		!repo.windows[1][0].Equal(wantWindows[1][0]) || !repo.windows[1][1].Equal(wantWindows[1][1]) {
 		t.Errorf("server total windows = %v, want %v", repo.windows, wantWindows)
 	}
-	for _, want := range []string{"-# Nov 23 – Nov 29 UTC", `🥇 **name\\_a** 🔥 — 20m`, `🥈 **name\\_b** — 20m`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "Server total: 214h · up 18% from last week"} {
+	for _, want := range []string{"-# Nov 23 – Nov 29\\n", `🥇 **name\\_a** 🔥 — 20m`, `🥈 **name\\_b** — 20m`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "Server total: 214h · up 18% from last week"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("leaderboard missing %q:\n%s", want, text)
 		}
@@ -151,20 +151,17 @@ func TestRecapComponents(t *testing.T) {
 		Lifetime:   1205*time.Hour + 30*time.Minute,
 		ActiveDays: pomomo.ActiveDays{Week: 4},
 	}
-	text := componentsText(t, RecapComponents(newRecap("ben_jamon", stats, now)))
-	for _, want := range []string{`### ben\\_jamon's Weekly Recap 🔥`, "-# Mon, Nov 23 – Sun, Nov 29 UTC", "**Total focus**",
+	text := componentsText(t, RecapComponents(newRecap(stats, now)))
+	for _, want := range []string{"### Your Pomomo Stats 🔥", "-# Mon, Nov 23 – Sun, Nov 29\\n", "**Total focus time**",
 		"This week 4h 10m · This month 26h · Lifetime 1,205h"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("recap missing %q:\n%s", want, text)
 		}
 	}
-	for _, unwanted := range []string{"Pomodoros", "Sessions", "Active days", "Best day", "November", "Tue"} {
+	for _, unwanted := range []string{"Pomodoros", "Sessions", "Active days", "Best day", "November", "Tue", "UTC"} {
 		if strings.Contains(text, unwanted) {
 			t.Errorf("recap shouldn't contain %q:\n%s", unwanted, text)
 		}
-	}
-	if text := componentsText(t, RecapComponents(newRecap("", pomomo.WeeklyStats{}, now))); !strings.Contains(text, "### Your Weekly Recap\\n") {
-		t.Errorf("expected generic title for empty name:\n%s", text)
 	}
 }
 
@@ -201,7 +198,7 @@ func statsCommandEvent(t *testing.T, options string) *events.ApplicationCommandI
 	it, err := discord.UnmarshalInteraction([]byte(`{
 		"id":"333","application_id":"444","type":2,"token":"tok","version":1,
 		"guild_id":"555","channel":{"id":"111","type":0},
-		"member":{"nick":"Tomato Fan","user":{"id":"666","username":"u"},"roles":[],"joined_at":"2026-01-01T00:00:00Z"},
+		"member":{"user":{"id":"666","username":"u"},"roles":[],"joined_at":"2026-01-01T00:00:00Z"},
 		"data":{"id":"777","name":"stats","type":1,"options":` + options + `}
 	}`))
 	if err != nil {
@@ -216,8 +213,8 @@ func TestStatsCommand(t *testing.T) {
 		ephemeral     bool
 		want          string
 	}{
-		{"default is me", `[]`, true, "attachment://weekly-recap.png"},
-		{"me", `[{"name":"scope","type":3,"value":"me"}]`, true, "attachment://weekly-recap.png"},
+		{"default is me", `[]`, true, "attachment://pomomo-stats.png"},
+		{"me", `[{"name":"scope","type":3,"value":"me"}]`, true, "attachment://pomomo-stats.png"},
 		{"server", `[{"name":"scope","type":3,"value":"server"}]`, false, "This week's leaderboard"},
 	}
 	for _, tt := range tests {
@@ -236,7 +233,7 @@ func TestStatsCommand(t *testing.T) {
 			t.Errorf("%s: files = %v", tt.name, dm.files)
 		} else if wantFile {
 			b, _ := io.ReadAll(dm.files[0].Reader)
-			if dm.files[0].Name != "weekly-recap.png" || !bytes.HasPrefix(b, []byte("\x89PNG")) {
+			if dm.files[0].Name != "pomomo-stats.png" || !bytes.HasPrefix(b, []byte("\x89PNG")) {
 				t.Errorf("%s: expected png attachment, got %s (%d bytes)", tt.name, dm.files[0].Name, len(b))
 			}
 		}
@@ -245,7 +242,7 @@ func TestStatsCommand(t *testing.T) {
 	// the text version is sent when the card can't be
 	dm := &fakeMessenger{filesErr: errors.New("upload failed")}
 	Stats(t.Context(), &fakeStatsRepo{}, fakeMembers{}, dm, statsCommandEvent(t, `[]`))
-	if text := componentsText(t, dm.sent); !strings.Contains(text, "### Tomato Fan's Weekly Recap") || !strings.Contains(text, "This week 20m") {
+	if text := componentsText(t, dm.sent); !strings.Contains(text, "### Your Pomomo Stats") || !strings.Contains(text, "This week 20m") {
 		t.Errorf("expected text recap fallback:\n%s", text)
 	}
 }

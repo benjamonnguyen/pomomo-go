@@ -28,7 +28,7 @@ Still open from M02: watch the prod logs and run M02 FOLLOWUP-01 V03–V10 in pr
 
 - M03 (details in `M03/PLAN.md`):
   - Weekly stats use Monday–Sunday UTC weeks and calendar months: the leaderboard ranking, the server total (compared with last week up to the same point), and the card. 🔥 streaks stay rolling.
-  - `/stats me` is an ephemeral PNG card drawn by the root-level `image` package (imported as `pomoimage`). It shows no counts or tiles, uses an initial badge (no avatar download), and strips names to the glyphs Noto Sans has.
+  - `/stats me` is an ephemeral PNG card, `Your Pomomo Stats`, drawn by the root-level `image` package (imported as `pomoimage`). It has no name, avatar, tiles, streak caption or footer; fires fill from the left; there's no "UTC" in date ranges; and the panel reads `TOTAL FOCUS TIME`.
   - Text fallback: title with fires, date range, and This week · This month · Lifetime.
 
 ## Blockers
@@ -49,7 +49,7 @@ Still open from M02: watch the prod logs and run M02 FOLLOWUP-01 V03–V10 in pr
 
 ## M03 changes (above the pending deploy changes)
 
-- `xrwltxmu` plan · `zuqmulwo` T02 `image` package · `sztxxkrs` T01 Monday weeks · `syxkqwqk` T03 followup files · `rzxumlks` T04 `GetWeeklyStats` · `zyvylluk` T05 text fallback · `prnqvnzu` T06 `/stats me` card · `wpwsuwnt` T07 follow-up and state · `rqyntsos` best day removed from the card.
+- `xrwltxmu` plan · `zuqmulwo` T02 `image` package · `sztxxkrs` T01 Monday weeks · `syxkqwqk` T03 followup files · `rzxumlks` T04 `GetWeeklyStats` · `zyvylluk` T05 text fallback · `prnqvnzu` T06 `/stats me` card · `wpwsuwnt` T07 follow-up and state · `rqyntsos` best day removed from the card · `uwqzyxln` card simplified (no name, badge, caption or footer; `Your Pomomo Stats`; no "UTC").
 - New dependency `golang.org/x/image` (plus `x/text`, indirect). `go mod tidy` needs the sandbox disabled, because the module cache is read-only.
 
 ## Context

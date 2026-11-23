@@ -1,6 +1,6 @@
 # Milestone 3 — Weekly recap card and Monday weeks
 
-**Goal:** `/stats me` replies with a rendered PNG "Weekly Recap" card showing an initial badge, the date range, focus time per day, streak fires, and totals. Weekly stats use calendar weeks that always start on Monday (UTC). Streaks stay rolling.
+**Goal:** `/stats me` replies with a rendered PNG "Your Pomomo Stats" card showing the date range, focus time per day, streak fires, and totals. Weekly stats use calendar weeks that always start on Monday (UTC). Streaks stay rolling.
 
 **Status:** Final (2026-11-23). Implemented (T01–T07).
 
@@ -22,46 +22,34 @@
 - **Streaks stay rolling:** 🔥 is 4+ active days in the last 7 days, 🔥🔥 is 16+ in the last 30, and 🔥🔥🔥 is 64+ in the last 90. These are M02's `WindowStart` and `*Days` constants, unchanged. This applies to both the leaderboard markers and the card's fires.
 - **Leaderboard:**
   - It ranks focus time since Monday 00:00 UTC.
-  - The header gains the date range as a second line: `### This week's leaderboard`, then `-# Nov 23 – Nov 29 UTC`.
+  - The header gains the date range as a second line: `### This week's leaderboard`, then `-# Nov 23 – Nov 29`.
 - **Server total line:**
   - The `Server total:` figure is this week so far.
   - It is compared with last week up to the same point. For example, Mon 00:00 → Wed 15:00 this week against Mon 00:00 → Wed 15:00 last week. Comparing against the whole of last week would read "down" every Monday.
-- **`/stats me` card** (ephemeral, PNG attachment `weekly-recap.png`), laid out as in the prototype:
-  - **Header:**
-    - An initial badge (accent circle with the display name's first letter), then `<display name>'s Weekly Recap`, truncated with … when long.
-    - `Mon, Nov 23 – Sun, Nov 29 UTC` below.
-  - **Top right**, replacing the example's "POMOBOT / FOCUS. GROW. REPEAT.":
-    - Three fire slots: earned tiers in color, unearned in grey.
-    - A caption: `NO STREAK YET`, `4+ DAYS THIS WEEK`, `16+ DAYS THIS MONTH` or `64+ DAYS THIS QUARTER`.
-  - **No stat tiles** (no pomodoros, sessions or active days); the card is shorter than the prototype (900×440 logical).
-  - **Weekly Stats** (replacing "Daily focus"):
+- **`/stats me` card** (ephemeral, PNG attachment `pomomo-stats.png`, 900×382 logical):
+  - **Header:** `Your Pomomo Stats` (no display name or avatar), with the date range `Mon, Nov 23 – Sun, Nov 29` below. The days are UTC, but the card doesn't say "UTC".
+  - **Top right:** three fire slots that fill from left to right (earned tiers in color, unearned in grey). No caption.
+  - **No stat tiles** (no pomodoros, sessions or active days) and **no footer**.
+  - **Weekly Stats:**
     - Mon–Sun bars scaled to the week's best day, with a 1h minimum scale. Each bar is labelled with its time.
     - Today's label is in the accent color; future days are dimmed.
-  - **Total Focus** panel (replacing "Week highlights"): This week, This month, and Lifetime (whole hours, with a thousands separator).
-  - **Footer:**
-    - Left: `A fresh week is a fresh start.` when the week is empty, otherwise nothing. No "best day".
-    - Right: `Pomomo`.
+  - **Total Focus Time** panel: This week, This month (calendar month), and Lifetime (whole hours, with a thousands separator).
   - **Style:** dark only, with the tomato accent `#ED6A43`.
-- **No avatar download:** the card never fetches avatars.
-- **Names the font can't draw:**
-  - Characters Noto Sans has no glyph for (CJK, emoji in nicknames) are stripped before drawing, so no empty boxes appear.
-  - A name that ends up empty falls back to `Your Weekly Recap` with a `?` badge.
-  - No fallback fonts for now.
-- **Text fallback:** if rendering or sending the card fails, the reply is a short Components V2 text version: header, date range, and totals only. It has no daily focus times, no best day, no counts, and no last-active line:
+- **Text fallback:** if rendering or sending the card fails, the reply is a short Components V2 text version with the title, date range and totals only:
   ```
-  ### ben_jamon's Weekly Recap 🔥
-  -# Mon, Nov 23 – Sun, Nov 29 UTC
-  **Total focus**
-  This week 4h 10m · This month 26h 0m · Lifetime 72h
+  ### Your Pomomo Stats 🔥
+  -# Mon, Nov 23 – Sun, Nov 29
+  **Total focus time**
+  This week 4h 10m · This month 26h · Lifetime 72h
   ```
-  - The name is markdown-escaped.
   - This replaces M02's `UserStatsComponents`, so the "No pomodoros yet" reply is gone. An empty week still renders the card.
+- **Leaderboard date line** has no "UTC" either: `-# Nov 23 – Nov 29`.
 - **End message unchanged:** it still ends with the text leaderboard. The card is only for `/stats me`.
 
 ## Design
 
 - **New root-level package `image`** (`github.com/benjamonnguyen/pomomo-go/image`, directory `image/`):
-  - `Recap` is pure data: name, week start, now, per-day focus `[7]time.Duration`, streak tier (0–3), month focus, and lifetime focus.
+  - `Recap` is pure data: week start, now, per-day focus `[7]time.Duration`, streak tier (0–3), month focus, and lifetime focus.
   - `RenderRecap(Recap) ([]byte, error)` returns the PNG.
   - Assets are embedded with `go:embed` under `image/assets/`: the fonts, `fire.png`, and their license files.
   - No Discord or DB dependencies.
@@ -75,9 +63,9 @@
 - **`buildLeaderboard`:**
   - this week = `[WeekStart(now), now)`;
   - last week = `[WeekStart(now)-7d, now-7d)`.
-- **Messenger:** `disgo.Followup` gains file attachments (e.g. `FollowupWithFiles(files []*discord.File, components ...)`, or a variadic option; decided at task time). It's sent with `IsComponentsV2` and a `MediaGallery` that references `attachment://weekly-recap.png`.
+- **Messenger:** `disgo.Followup` gains file attachments (e.g. `FollowupWithFiles(files []*discord.File, components ...)`, or a variadic option; decided at task time). It's sent with `IsComponentsV2` and a `MediaGallery` that references `attachment://pomomo-stats.png`.
 - **Handler:**
-  - `Stats` for the `me` scope: get the weekly stats, then build the `Recap`, then render it. The display name comes from the interaction's member (`EffectiveName()`: nickname, then global name, then username), so there's no REST lookup.
+  - `Stats` for the `me` scope: get the weekly stats, then build the `Recap`, then render it. No display name or member lookup.
   - It sends the card as the deferred ephemeral followup. If rendering or sending fails, it sends the text fallback.
 - **Dependencies and assets:**
   - New dependency: `golang.org/x/image`.
@@ -102,7 +90,7 @@
   - Tests:
     - week and month boundaries, including Sunday 23:59 → Monday 00:00 and year edges;
     - per-day sums;
-    - a render smoke test (valid PNG, 1800×880, all streak tiers, long and unsupported names);
+    - a render smoke test (valid PNG, 1800×764, all streak tiers, long and unsupported names);
     - the handler attaching the file, plus its fallback;
     - leaderboard and week-over-week windows.
   - No schema change, so no migrations.
