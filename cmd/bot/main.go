@@ -241,7 +241,11 @@ func main() {
 
 	// discord event hooks
 	cl.AddEventListeners(
+		bot.NewListenerFunc(func(e *events.GuildJoin) {
+			log.Info("added to guild", "gid", e.GuildID, "members", e.Guild.MemberCount)
+		}),
 		bot.NewListenerFunc(func(e *events.GuildLeave) {
+			log.Info("removed from guild", "gid", e.GuildID)
 			// removed from guild - no more voice state or interaction events for its sessions
 			if err := sessionManager.EndGuildSessions(topCtx, e.GuildID.String()); err != nil {
 				log.Error("failed to end sessions on guild leave", "gid", e.GuildID, "err", err)
