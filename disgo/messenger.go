@@ -76,6 +76,16 @@ func (m *Messenger) DeferMessageCreate(it discord.Interaction, ephemeral bool) (
 	}, nil
 }
 
+// FollowupWithFiles sends a deferred response's content with files attached.
+// Components V2 only show files that a component references as attachment://<name>.
+func (m *Messenger) FollowupWithFiles(it discord.Interaction, files []*discord.File, components ...discord.LayoutComponent) (*discord.Message, error) {
+	return m.rest.CreateFollowupMessage(it.ApplicationID(), it.Token(), discord.MessageCreate{
+		Flags:      discord.MessageFlagIsComponentsV2,
+		Components: components,
+		Files:      files,
+	})
+}
+
 // DeferMessageUpdate acks a component interaction; the followup edits the message the component is on.
 func (m *Messenger) DeferMessageUpdate(it discord.Interaction) (Followup, error) {
 	if err := m.rest.CreateInteractionResponse(it.ID(), it.Token(), discord.InteractionResponse{

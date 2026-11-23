@@ -19,6 +19,7 @@ type DiscordMessenger interface {
 	EditResponse(it discord.Interaction, components ...discord.LayoutComponent) (*discord.Message, error)
 	DeferMessageCreate(it discord.Interaction, ephemeral bool) (disgo.Followup, error)
 	DeferMessageUpdate(it discord.Interaction) (disgo.Followup, error)
+	FollowupWithFiles(it discord.Interaction, files []*discord.File, components ...discord.LayoutComponent) (*discord.Message, error)
 }
 
 var _ DiscordMessenger = (*disgo.Messenger)(nil)

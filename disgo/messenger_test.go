@@ -151,3 +151,42 @@ func TestMessengerDeferMessageUpdate(t *testing.T) {
 		t.Errorf("unexpected followup: %+v", got[1])
 	}
 }
+
+func TestMessengerFollowupWithFiles(t *testing.T) {
+	var path, payload, fileName, fileBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("expected multipart body: %v", err)
+		}
+		payload = r.FormValue("payload_json")
+		if f, h, err := r.FormFile("files[0]"); err == nil {
+			fileName = h.Filename
+			b, _ := io.ReadAll(f)
+			fileBody = string(b)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"222","channel_id":"111","type":0,"content":""}`))
+	}))
+	t.Cleanup(srv.Close)
+	m := NewMessenger(rest.New(rest.NewClient("token", rest.WithURL(srv.URL))))
+
+	files := []*discord.File{discord.NewFile("card.png", "", strings.NewReader("png bytes"))}
+	gallery := discord.NewMediaGallery(discord.MediaGalleryItem{Media: discord.UnfurledMediaItem{URL: "attachment://card.png"}})
+	if _, err := m.FollowupWithFiles(testInteraction(t), files, gallery); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(path, "/webhooks/444/tok") {
+		t.Errorf("unexpected path %s", path)
+	}
+	if fileName != "card.png" || fileBody != "png bytes" {
+		t.Errorf("file not attached: %q %q", fileName, fileBody)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(payload), &body); err != nil {
+		t.Fatal(err)
+	}
+	if !flagsOf(t, body).Has(discord.MessageFlagIsComponentsV2) || !strings.Contains(payload, "attachment://card.png") {
+		t.Errorf("unexpected payload: %s", payload)
+	}
+}
