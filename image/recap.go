@@ -164,11 +164,9 @@ func RenderRecap(r Recap) ([]byte, error) {
 
 	// footer
 	foot := c.face(regular, 12)
-	tagline := "A fresh week is a fresh start."
-	if best, i := bestDay(r.Days); best > 0 {
-		tagline = fmt.Sprintf("Best day: %s · %s", r.WeekStart.AddDate(0, 0, i).Format("Monday"), FormatDuration(best))
+	if r.Week() == 0 {
+		c.text(foot, "A fresh week is a fresh start.", 58, 392, colText, alignLeft)
 	}
-	c.text(foot, tagline, 58, 392, colText, alignLeft)
 	c.text(foot, "Pomomo", 845, 392, colText, alignRight)
 
 	var buf bytes.Buffer
@@ -201,15 +199,6 @@ func FormatHours(d time.Duration) string {
 		return fmt.Sprintf("%d,%03dh", h/1000, h%1000)
 	}
 	return fmt.Sprintf("%dh", h)
-}
-
-func bestDay(days [7]time.Duration) (best time.Duration, idx int) {
-	for i, d := range days {
-		if d > best {
-			best, idx = d, i
-		}
-	}
-	return best, idx
 }
 
 func hex(v uint32) color.RGBA {

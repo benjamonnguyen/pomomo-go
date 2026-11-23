@@ -39,7 +39,7 @@
     - Today's label is in the accent color; future days are dimmed.
   - **Total Focus** panel (replacing "Week highlights"): This week, This month, and Lifetime (whole hours, with a thousands separator).
   - **Footer:**
-    - Left: `Best day: <weekday> · <time>`, or `A fresh week is a fresh start.` when the week is empty.
+    - Left: `A fresh week is a fresh start.` when the week is empty, otherwise nothing. No "best day".
     - Right: `Pomomo`.
   - **Style:** dark only, with the tomato accent `#ED6A43`.
 - **No avatar download:** the card never fetches avatars.

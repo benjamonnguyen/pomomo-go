@@ -7,7 +7,7 @@ Automated coverage: `go vet` and `go test -race ./...` pass at the end of M03. T
 - leaderboard ranking from Monday (last Sunday excluded) with rolling active days, and server totals windows (this week so far vs last week to the same point)
 - the leaderboard's date range line
 - `RenderRecap`: valid 1800×880 PNG for tiers 0–3, an empty week, and long, unsupported (CJK/emoji) and empty names; `drawable` glyph stripping
-- the text fallback: title, streak, date range, totals; no counts, daily times or best day
+- the text fallback: title, streak, date range, totals; no counts or daily times
 - `/stats me`: ephemeral, `weekly-recap.png` attached and referenced by a media gallery; text fallback when the upload fails
 - `Messenger.FollowupWithFiles` against a fake REST server (multipart with `payload_json` and `files[0]`)
 
