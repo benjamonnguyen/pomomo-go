@@ -27,6 +27,12 @@ Run: `POMOMO_CONFIG_PATH=$HOME/.pomomo/.env.dev go run ./cmd/bot` (set `POMOMO_L
 | V17 | | Graceful shutdown | Ctrl-C with an active session | Participants restored; exits < 10s with no `failed to shut down gracefully` |
 | V18 | | Gateway resilience | Drop network for ~1–2 min (e.g. disable Wi-Fi) then restore | Bot reconnects by itself and keeps handling interactions — **the original outage** |
 | V19 | | Docker image | Build from parent dir as usual, run with `.env.dev` | Same as V02/V06 inside the container |
+| V20 | | Disconnect during session (2026-11-22 triage) | Participant disconnects from voice entirely, then rejoins any voice channel in the guild | No 40032 logged; participant detached on disconnect, voice state restored + deleted on rejoin |
+| V21 | | Join while not in voice | Press **Join** while not connected to voice | Ephemeral "Join #channel first…" with a clickable channel link; Debug log only |
+| V22 | | Join without Move Members | Remove the bot's Move Members permission, press **Join** from another voice channel | Ephemeral "doesn't have permission to move you…" message; Warn (not Error) log |
+| V23 | | Kick bot mid-session | Kick the bot from the test guild during a session | `ended guild session` logged; no further `main.go` edit errors for that session |
+| V24 | | Timer channel access revoked | Deny the bot View Channel on the session's text channel | Session ends after ~3 ticks (~1 min) with `ended unreachable session` |
+| V25 | | Restart with restored pomodoro session | Restart the bot mid-pomodoro | Participants are **not** detached by autoshush (no `detached participant no longer in voice`); session keeps running |
 
 ## golibdave fallback (if V06/V08/V09 fail with dave-go)
 

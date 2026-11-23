@@ -37,10 +37,16 @@
   - To verify in dev or prod: V03, V06, V15, V16, V17 in FOLLOWUP-01.
 - Unexplained ops events: a double start at 20:27 and an ungraceful recreate at 20:37. Check `docker logs` (panics go to stderr, not the log file) and `journalctl -u docker` on starling.
 
-## Prod report 2026-11-22 (assessed 2026-11-23, no fixes yet)
+## Prod report 2026-11-22 (assessed and fixed 2026-11-23, not deployed)
 
-- bot0 spike (3698× `main.go:217` 50001, plus 10004 at `autoshush.go:36`): session `8513f4a5` is orphaned. The bot most likely lost the guild or channel, so no leave events arrive, the participants are never removed, and the session never goes empty. Check whether it is still running and end it in the DB if so. A restart alone won't help, because `RestoreSessions` resumes it.
-- Proposed fixes: (1) end sessions on `GuildLeave` and on terminal edit errors (10003/10004/10008; 50001 after N consecutive ticks); (2) drop participants whose voice state is missing at `autoshush.go:60`; (3) `JoinSession` answers "join a voice channel first" when the user isn't in voice, at Debug log level; (4) `hooks.go:76` returns early when `after == ""`, and `hooks.go:47` detaches without restoring on disconnect; (5) log `channelID` as TextCID at `main.go:160/217`.
+- bot0 spike (3698× `main.go:217` 50001, plus 10004 at `autoshush.go:36`): session `8513f4a5` is orphaned. The bot most likely lost access to the guild, so no leave events arrive, the participants are never removed, and the session never goes empty. Once the fixes are deployed, the restart restores it and it ends after 3 failed edits (`ended unreachable session`). If deploying is delayed, end it in the DB.
+- Fix stack above the STATE change (build, vet, and `go test -race ./...` pass at each change):
+  - `tpltzpox`: disconnects detach without attempting a restore (no more 40032 at `hooks.go:47`). The join hook ignores disconnects (`hooks.go:76`). 50013 on restore is logged at Warn.
+  - `onqmmktq`: clearer Join/Start/Skip errors. Join while not in voice links the channel (bots can't pull users into voice). A failed move or a missing permission gets its own message. Join or Skip on an ended session no longer errors. Adds `disgo.ErrVoiceStateNotFound`.
+  - `znukpxmt`: autoshush detaches participants whose voice state is missing. `GetVoiceState` only returns `ErrVoiceStateNotFound` once the guild is loaded (this avoids the startup race listed in FOLLOWUP).
+  - `womypomz`: sessions end on `GuildLeave` (`EndGuildSessions`), and when timer-message edits fail with 10003/10004/10008, or with 50001 on 3 consecutive ticks. Logs use `textCID` instead of `channelID`=VoiceCID.
+  - `tzmprzyv` (above the docs change): logs `added to guild` / `removed from guild` (disgo `GuildJoin`/`GuildLeave`, so outages aren't counted). The report prompt in `~/home-server/agent/pomomo-report.md` now counts these lines (jj change `qktuxkso` there, not committed).
+- To verify: V20–V25 in FOLLOWUP-01. Not pushed or deployed.
 
 ## Context
 
