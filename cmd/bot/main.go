@@ -99,6 +99,7 @@ func main() {
 	// repos
 	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
 	participantRepo := sqlite.NewParticipantRepo(dbGetter, *log.Default())
+	statsRepo := sqlite.NewStatsRepo(dbGetter, *log.Default())
 
 	// set up discord cl
 	gatewayOpts := []gateway.ConfigOpt{
@@ -147,7 +148,7 @@ func main() {
 	}
 
 	// session manager
-	sessionManager := NewSessionManager(topCtx, sessionRepo, pm, tx)
+	sessionManager := NewSessionManager(topCtx, sessionRepo, statsRepo, pm, tx)
 	// start go routine so that we don't get deadlocked from a recursive trigger
 	// use topCtx since ending the session cancels the session ctx, which would fail participant cleanup
 	endSessionAsync := func(s models.Session, reason string) {

@@ -39,6 +39,11 @@ type SessionRepo interface {
 	DeleteSettings(context.Context, pomomo.SessionID) (pomomo.ExistingSessionSettingsRecord, error)
 }
 
+// FocusIntervalRepo records completed pomodoros for stats
+type FocusIntervalRepo interface {
+	InsertFocusIntervals(context.Context, ...pomomo.FocusIntervalRecord) error
+}
+
 type SessionManager interface {
 	HasSession(textCID string) bool
 	GetSession(cid pomomo.TextChannelID) (models.Session, error)
@@ -61,6 +66,7 @@ type SessionManager interface {
 
 type sessionManager struct {
 	repo      SessionRepo
+	stats     FocusIntervalRepo
 	tx        transactor.Transactor
 	cache     *sessionCache
 	wg        sync.WaitGroup
@@ -70,7 +76,7 @@ type sessionManager struct {
 	afterUpdate func(ctx context.Context, before, curr models.Session)
 }
 
-func NewSessionManager(ctx context.Context, repo SessionRepo, pm ParticipantsManager, tx transactor.Transactor) SessionManager {
+func NewSessionManager(ctx context.Context, repo SessionRepo, stats FocusIntervalRepo, pm ParticipantsManager, tx transactor.Transactor) SessionManager {
 	cache := sessionCache{
 		sessions:         make(map[pomomo.TextChannelID]*models.Session),
 		locks:            make(map[pomomo.TextChannelID]*sync.Mutex),
@@ -82,6 +88,7 @@ func NewSessionManager(ctx context.Context, repo SessionRepo, pm ParticipantsMan
 	return &sessionManager{
 		cache:     &cache,
 		repo:      repo,
+		stats:     stats,
 		pm:        pm,
 		tx:        tx,
 		parentCtx: ctx,
@@ -182,11 +189,42 @@ func (m *sessionManager) updateSession(ctx context.Context, s *models.Session) e
 	if s.TimeRemaining() > 0 {
 		return nil
 	}
+	// credit before advancing, while the completed pomodoro is still current
+	var credits []pomomo.FocusIntervalRecord
+	if s.Record.CurrentInterval == pomomo.PomodoroInterval {
+		credits = m.focusIntervals(*s)
+	}
 	s.GoNextInterval(true)
 	return m.tx.WithinTransaction(ctx, func(ctx context.Context) error {
-		_, err := m.repo.UpdateSession(ctx, s.ID, s.Record)
-		return err
+		if _, err := m.repo.UpdateSession(ctx, s.ID, s.Record); err != nil {
+			return err
+		}
+		if len(credits) == 0 {
+			return nil
+		}
+		return m.stats.InsertFocusIntervals(ctx, credits...)
 	})
+}
+
+// focusIntervals credits the current pomodoro to participants attached to the session's voice channel.
+// Restore catch-up and skips don't go through updateSession, so they aren't credited.
+func (m *sessionManager) focusIntervals(s models.Session) []pomomo.FocusIntervalRecord {
+	if s.Settings.Pomodoro <= 0 {
+		return nil
+	}
+	completedAt := s.Record.IntervalStartedAt.Add(s.Record.TimeRemainingAtStart)
+	var credits []pomomo.FocusIntervalRecord
+	for _, p := range m.pm.GetAll(s.Record.VoiceCID) {
+		credits = append(credits, pomomo.FocusIntervalRecord{
+			GuildID:     s.Record.GuildID,
+			UserID:      p.Record.UserID,
+			SessionID:   s.ID,
+			Pomodoro:    s.Record.CompletedPomodoros + 1,
+			Duration:    s.Settings.Pomodoro,
+			CompletedAt: completedAt,
+		})
+	}
+	return credits
 }
 
 func (m *sessionManager) startUpdateLoop(ctx context.Context, cid pomomo.TextChannelID) {
@@ -285,8 +323,10 @@ func (m *sessionManager) StartSession(ctx context.Context, req startSessionReque
 		return models.Session{}, fmt.Errorf("failed to insert original participant: %w", err)
 	}
 
+	// copy before the update loop starts writing to the cached session
+	started := session
 	m.startUpdateLoop(sessionCtxs[0], session.Record.TextCID)
-	return session, nil
+	return started, nil
 }
 
 func (m *sessionManager) SkipInterval(ctx context.Context, cid pomomo.TextChannelID) (models.Session, error) {

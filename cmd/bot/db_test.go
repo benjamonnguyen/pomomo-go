@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -137,5 +138,125 @@ func TestWindowStart(t *testing.T) {
 	}
 	if got := pomomo.WindowStart(now, 1); !got.Equal(time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)) {
 		t.Errorf("today start: %v", got)
+	}
+}
+
+type testManagers struct {
+	sm    *sessionManager
+	pm    ParticipantsManager
+	repo  SessionRepo
+	stats interface {
+		GetUserStats(ctx context.Context, guildID, userID string, now time.Time) (pomomo.UserStats, error)
+	}
+}
+
+func newTestManagers(t *testing.T) testManagers {
+	tx, dbGetter := newTestDB(t)
+	sessionRepo := sqlite.NewSessionRepo(dbGetter, *log.Default())
+	statsRepo := sqlite.NewStatsRepo(dbGetter, *log.Default())
+	pm := NewParticipantManager(sqlite.NewParticipantRepo(dbGetter, *log.Default()), tx, *log.Default())
+	sm := NewSessionManager(t.Context(), sessionRepo, statsRepo, pm, tx).(*sessionManager)
+	t.Cleanup(func() { _ = sm.Shutdown() })
+	return testManagers{sm: sm, pm: pm, repo: sessionRepo, stats: statsRepo}
+}
+
+var testSettings = pomomo.SessionSettingsRecord{Pomodoro: 20 * time.Minute, ShortBreak: 5 * time.Minute, LongBreak: 15 * time.Minute, Intervals: 4}
+
+func TestUpdateSessionCreditsAttachedParticipants(t *testing.T) {
+	m := newTestManagers(t)
+	ctx := t.Context()
+	req := startSessionRequest{guildID: "g", textCID: "t", voiceCID: "v", messageID: "m", settings: testSettings}
+	req.user.id = "starter"
+	session, err := m.sm.StartSession(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the update loop's first tick starts the first pomodoro - wait so test writes don't race it (no busy_timeout)
+	for deadline := time.Now().Add(time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if s, _ := m.sm.GetSession("t"); s.Record.CurrentInterval == pomomo.PomodoroInterval {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("session never started its first pomodoro")
+		}
+	}
+
+	// a participant who left voice and was detached
+	if _, err := m.pm.Insert(ctx, pomomo.ParticipantRecord{SessionID: session.ID, GuildID: "g", VoiceCID: "v", UserID: "detached"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.pm.DetachFromChannel(ctx, "detached", "v"); err != nil {
+		t.Fatal(err)
+	}
+
+	completePomodoro := func() {
+		t.Helper()
+		s, unlock := m.sm.cache.Get("t")
+		defer unlock()
+		s.Record.IntervalStartedAt = s.Record.IntervalStartedAt.Add(-s.Record.TimeRemainingAtStart - time.Second)
+		if err := m.sm.updateSession(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	completePomodoro()
+	// break ends - nothing to credit
+	completePomodoro()
+
+	starter, err := m.stats.GetUserStats(ctx, "g", "starter", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starter.Pomodoros != 1 || starter.FocusTime != 20*time.Minute {
+		t.Errorf("starter should be credited once, got %+v", starter)
+	}
+	if detached, _ := m.stats.GetUserStats(ctx, "g", "detached", time.Now()); detached.Pomodoros != 0 {
+		t.Errorf("detached participant shouldn't be credited, got %+v", detached)
+	}
+	if stored, _ := m.repo.GetSession(ctx, session.ID); stored.CompletedPomodoros != 1 {
+		t.Errorf("completed pomodoros not persisted, got %d", stored.CompletedPomodoros)
+	}
+
+	// skips aren't credited
+	if _, err := m.sm.SkipInterval(ctx, "t"); err != nil {
+		t.Fatal(err)
+	}
+	if starter, _ := m.stats.GetUserStats(ctx, "g", "starter", time.Now()); starter.Pomodoros != 1 {
+		t.Errorf("skipped pomodoro shouldn't be credited, got %+v", starter)
+	}
+}
+
+func TestRestoreSessionsDoesNotCreditCatchUp(t *testing.T) {
+	m := newTestManagers(t)
+	ctx := t.Context()
+	// session that was mid-pomodoro 50 minutes ago, while the bot was down
+	inserted, err := m.repo.InsertSession(ctx, pomomo.SessionRecord{
+		GuildID: "g", TextCID: "t", VoiceCID: "v", MessageID: "m",
+		IntervalStartedAt: time.Now().Add(-50 * time.Minute), TimeRemainingAtStart: 20 * time.Minute,
+		CurrentInterval: pomomo.PomodoroInterval, Status: pomomo.SessionRunning,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := testSettings
+	settings.SessionID = inserted.ID
+	if _, err := m.repo.InsertSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.pm.Insert(ctx, pomomo.ParticipantRecord{SessionID: inserted.ID, GuildID: "g", VoiceCID: "v", UserID: "u"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.sm.RestoreSessions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.sm.GetSession("t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Record.CompletedPomodoros == 0 {
+		t.Error("catch-up should still advance the pomodoro count")
+	}
+	if u, _ := m.stats.GetUserStats(ctx, "g", "u", time.Now()); u.Pomodoros != 0 {
+		t.Errorf("catch-up pomodoros shouldn't be credited, got %+v", u)
 	}
 }
