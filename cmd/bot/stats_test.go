@@ -49,6 +49,7 @@ type fakeStatsRepo struct {
 	StatsRepo
 	entries []pomomo.LeaderboardEntry
 	limit   int
+	windows [][2]time.Time // GetServerTotals calls
 }
 
 func (f *fakeStatsRepo) GetLeaderboard(ctx context.Context, guildID string, now time.Time, limit int) ([]pomomo.LeaderboardEntry, error) {
@@ -58,7 +59,8 @@ func (f *fakeStatsRepo) GetLeaderboard(ctx context.Context, guildID string, now 
 
 // GetServerTotals returns 214h this week and ~181h last week (up 18%)
 func (f *fakeStatsRepo) GetServerTotals(ctx context.Context, guildID string, since, until time.Time) (pomomo.ServerTotals, error) {
-	if until.Sub(since) < pomomo.WeekDays*24*time.Hour { // this week's window ends now, mid-day
+	f.windows = append(f.windows, [2]time.Time{since, until})
+	if len(f.windows) == 1 {
 		return pomomo.ServerTotals{FocusTime: 214*time.Hour + 20*time.Minute}, nil
 	}
 	return pomomo.ServerTotals{FocusTime: 181*time.Hour + 30*time.Minute}, nil
@@ -95,7 +97,8 @@ func TestBuildLeaderboard(t *testing.T) {
 	entries[0].ActiveDays.Week = 4
 	repo := &fakeStatsRepo{entries: entries}
 
-	components, err := buildLeaderboard(t.Context(), repo, fakeMembers{}, "g", time.Now())
+	now := time.Date(2026, 11, 25, 15, 0, 0, 0, time.UTC) // Wednesday
+	components, err := buildLeaderboard(t.Context(), repo, fakeMembers{}, "g", now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +106,14 @@ func TestBuildLeaderboard(t *testing.T) {
 	if repo.limit != leaderboardCandidates {
 		t.Errorf("expected %d candidates, got %d", leaderboardCandidates, repo.limit)
 	}
-	for _, want := range []string{`🥇 **name\\_a** 🔥 — 20m`, `🥈 **name\\_b** — 20m`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "Server total: 214h · up 18% from last week"} {
+	// this week so far vs last week up to the same point
+	monday := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	wantWindows := [][2]time.Time{{monday, now}, {monday.AddDate(0, 0, -7), now.AddDate(0, 0, -7)}}
+	if len(repo.windows) != 2 || !repo.windows[0][0].Equal(wantWindows[0][0]) || !repo.windows[0][1].Equal(wantWindows[0][1]) ||
+		!repo.windows[1][0].Equal(wantWindows[1][0]) || !repo.windows[1][1].Equal(wantWindows[1][1]) {
+		t.Errorf("server total windows = %v, want %v", repo.windows, wantWindows)
+	}
+	for _, want := range []string{"-# Nov 23 – Nov 29 UTC", `🥇 **name\\_a** 🔥 — 20m`, `🥈 **name\\_b** — 20m`, `🥉 **name\\_c**`, `4. **name\\_d**`, `5. **name\\_e**`, "Server total: 214h · up 18% from last week"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("leaderboard missing %q:\n%s", want, text)
 		}

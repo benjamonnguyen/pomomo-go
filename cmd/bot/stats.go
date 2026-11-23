@@ -125,11 +125,16 @@ type leaderboardRow struct {
 	Name string
 }
 
-func LeaderboardComponents(rows []leaderboardRow, thisWeek, lastWeek pomomo.ServerTotals) []discord.LayoutComponent {
+// weekRange formats the Monday week as "Nov 23 – Nov 29 UTC".
+func weekRange(weekStart time.Time) string {
+	return weekStart.Format("Jan 2") + " – " + weekStart.AddDate(0, 0, 6).Format("Jan 2") + " UTC"
+}
+
+func LeaderboardComponents(rows []leaderboardRow, weekStart time.Time, thisWeek, lastWeek pomomo.ServerTotals) []discord.LayoutComponent {
 	if len(rows) == 0 {
 		return []discord.LayoutComponent{TextDisplay("No pomodoros this week.")}
 	}
-	lines := []string{"### This week's leaderboard"}
+	lines := []string{"### This week's leaderboard", "-# " + weekRange(weekStart)}
 	for i, r := range rows {
 		name := "**" + escapeMarkdown(r.Name) + "**"
 		if marker := streakMarker(r.ActiveDays); marker != "" {
@@ -167,14 +172,15 @@ func buildLeaderboard(ctx context.Context, repo StatsRepo, members MemberLookup,
 		}
 		rows = append(rows, leaderboardRow{LeaderboardEntry: e, Name: name})
 	}
-	weekStart := pomomo.WindowStart(now, pomomo.WeekDays)
+	// compare with last week up to the same point so Mondays don't always read "down"
+	weekStart := pomomo.WeekStart(now)
 	thisWeek, err := repo.GetServerTotals(ctx, gid, weekStart, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server totals: %w", err)
 	}
-	lastWeek, err := repo.GetServerTotals(ctx, gid, weekStart.AddDate(0, 0, -pomomo.WeekDays), weekStart)
+	lastWeek, err := repo.GetServerTotals(ctx, gid, weekStart.AddDate(0, 0, -7), now.AddDate(0, 0, -7))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get last week's server totals: %w", err)
 	}
-	return LeaderboardComponents(rows, thisWeek, lastWeek), nil
+	return LeaderboardComponents(rows, weekStart, thisWeek, lastWeek), nil
 }

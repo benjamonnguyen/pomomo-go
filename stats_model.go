@@ -2,7 +2,7 @@ package pomomo
 
 import "time"
 
-// rolling stats windows in UTC days, including today
+// rolling streak windows in UTC days, including today
 const (
 	WeekDays    = 7
 	MonthDays   = 30
@@ -14,6 +14,18 @@ func WindowStart(now time.Time, days int) time.Time {
 	return now.UTC().Truncate(24*time.Hour).AddDate(0, 0, -(days - 1))
 }
 
+// WeekStart returns 00:00 UTC of the Monday on or before now.
+func WeekStart(now time.Time) time.Time {
+	day := now.UTC().Truncate(24 * time.Hour)
+	return day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))
+}
+
+// MonthStart returns 00:00 UTC on the first of now's month.
+func MonthStart(now time.Time) time.Time {
+	now = now.UTC()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
 // FocusIntervalRecord is a pomodoro completed by a participant.
 type FocusIntervalRecord struct {
 	GuildID, UserID string
@@ -23,7 +35,7 @@ type FocusIntervalRecord struct {
 	CompletedAt     time.Time
 }
 
-// ActiveDays counts UTC days with a completed pomodoro in each rolling window.
+// ActiveDays counts UTC days with a completed pomodoro in each rolling streak window.
 type ActiveDays struct {
 	Week, Month, Quarter int
 }
@@ -36,7 +48,7 @@ type UserStats struct {
 	ActiveDays ActiveDays
 }
 
-// LeaderboardEntry holds a user's stats for the week.
+// LeaderboardEntry holds a user's stats for the week, starting Monday.
 type LeaderboardEntry struct {
 	UserID     string
 	FocusTime  time.Duration

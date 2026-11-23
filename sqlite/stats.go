@@ -11,7 +11,7 @@ import (
 	"github.com/benjamonnguyen/pomomo-go"
 )
 
-// activeDaysCols counts distinct UTC days per window; args are the week, month and quarter starts
+// activeDaysCols counts distinct UTC days per rolling streak window; args are the week, month and quarter starts
 const activeDaysCols = `COUNT(DISTINCT CASE WHEN completed_at >= ? THEN date(completed_at, 'unixepoch') END),
 	COUNT(DISTINCT CASE WHEN completed_at >= ? THEN date(completed_at, 'unixepoch') END),
 	COUNT(DISTINCT CASE WHEN completed_at >= ? THEN date(completed_at, 'unixepoch') END)`
@@ -68,9 +68,9 @@ func (r *statsRepo) GetUserStats(ctx context.Context, guildID, userID string, no
 	return s, nil
 }
 
-// GetLeaderboard returns users ranked by focus time this week.
+// GetLeaderboard returns users ranked by focus time since Monday.
 func (r *statsRepo) GetLeaderboard(ctx context.Context, guildID string, now time.Time, limit int) ([]pomomo.LeaderboardEntry, error) {
-	week := pomomo.WindowStart(now, pomomo.WeekDays).Unix()
+	week := pomomo.WeekStart(now).Unix()
 	query := `SELECT user_id,
 	SUM(CASE WHEN completed_at >= ? THEN duration ELSE 0 END) AS week_focus,
 	SUM(CASE WHEN completed_at >= ? THEN 1 ELSE 0 END),

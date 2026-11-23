@@ -113,30 +113,60 @@ func TestStatsRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// carol has no pomodoros this week, alice's week excludes 8 days ago
-	if len(board) != 2 || board[0].UserID != "alice" || board[0].FocusTime != 60*time.Minute || board[0].Pomodoros != 3 ||
-		board[0].ActiveDays != (pomomo.ActiveDays{Week: 2, Month: 3, Quarter: 3}) || board[1].UserID != "bob" {
+	// now is a Monday: the week only has alice's 2 from today; bob's Sunday is last week.
+	// active days stay rolling, so alice's week still counts 6 days ago.
+	if len(board) != 1 || board[0].UserID != "alice" || board[0].FocusTime != 40*time.Minute || board[0].Pomodoros != 2 ||
+		board[0].ActiveDays != (pomomo.ActiveDays{Week: 2, Month: 3, Quarter: 3}) {
 		t.Errorf("unexpected leaderboard: %+v", board)
 	}
-	if board, _ := repo.GetLeaderboard(ctx, "g", now, 1); len(board) != 1 {
+	if err := repo.InsertFocusIntervals(ctx, pomodoro("bob", "s7", 1, now.Add(-2*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if board, _ := repo.GetLeaderboard(ctx, "g", now, 1); len(board) != 1 || board[0].UserID != "alice" {
 		t.Errorf("limit not applied: %+v", board)
 	}
 
-	totals, err := repo.GetServerTotals(ctx, "g", pomomo.WindowStart(now, pomomo.WeekDays), now.Add(time.Second))
+	weekStart := pomomo.WeekStart(now)
+	totals, err := repo.GetServerTotals(ctx, "g", weekStart, now.Add(time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if totals != (pomomo.ServerTotals{FocusTime: 80 * time.Minute, Pomodoros: 4, Sessions: 3, Users: 2}) {
+	if totals != (pomomo.ServerTotals{FocusTime: 60 * time.Minute, Pomodoros: 3, Sessions: 2, Users: 2}) {
 		t.Errorf("unexpected totals: %+v", totals)
 	}
-	// previous week: only alice's pomodoro from 8 days ago; until is exclusive
-	weekStart := pomomo.WindowStart(now, pomomo.WeekDays)
-	prev, err := repo.GetServerTotals(ctx, "g", weekStart.AddDate(0, 0, -pomomo.WeekDays), weekStart)
+	// previous Monday week: alice 6 days ago and bob's Sunday; until is exclusive
+	prev, err := repo.GetServerTotals(ctx, "g", weekStart.AddDate(0, 0, -7), weekStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prev.Pomodoros != 1 || prev.FocusTime != 20*time.Minute {
+	if prev.Pomodoros != 2 || prev.FocusTime != 40*time.Minute {
 		t.Errorf("unexpected previous week totals: %+v", prev)
+	}
+}
+
+func TestWeekStart(t *testing.T) {
+	day := func(y int, m time.Month, d, h, min int) time.Time { return time.Date(y, m, d, h, min, 0, 0, time.UTC) }
+	for now, want := range map[time.Time]time.Time{
+		day(2026, 11, 23, 0, 0):   day(2026, 11, 23, 0, 0), // Monday 00:00
+		day(2026, 11, 29, 23, 59): day(2026, 11, 23, 0, 0), // Sunday 23:59
+		day(2026, 11, 30, 0, 0):   day(2026, 11, 30, 0, 0), // next Monday
+		day(2027, 1, 1, 12, 0):    day(2026, 12, 28, 0, 0), // year edge (Friday)
+	} {
+		if got := pomomo.WeekStart(now); !got.Equal(want) {
+			t.Errorf("WeekStart(%v) = %v, want %v", now, got, want)
+		}
+	}
+	// non-UTC input is converted first: Mon 01:00 in UTC+2 is Sun 23:00 UTC
+	if got := pomomo.WeekStart(time.Date(2026, 11, 30, 1, 0, 0, 0, time.FixedZone("", 2*3600))); !got.Equal(day(2026, 11, 23, 0, 0)) {
+		t.Errorf("WeekStart in UTC+2 = %v", got)
+	}
+	for now, want := range map[time.Time]time.Time{
+		day(2026, 12, 31, 23, 59): day(2026, 12, 1, 0, 0),
+		day(2027, 1, 1, 0, 0):     day(2027, 1, 1, 0, 0),
+	} {
+		if got := pomomo.MonthStart(now); !got.Equal(want) {
+			t.Errorf("MonthStart(%v) = %v, want %v", now, got, want)
+		}
 	}
 }
 
