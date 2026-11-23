@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/benjamonnguyen/pomomo-go"
 	"github.com/benjamonnguyen/pomomo-go/cmd/bot/models"
+	"github.com/benjamonnguyen/pomomo-go/disgo"
 	"github.com/charmbracelet/log"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
@@ -93,6 +96,11 @@ func RestoreParticipantVoiceStateOnChannelJoin(ctx context.Context, vs VoiceStat
 		return true
 	}
 	return false
+}
+
+// channelMention renders as a clickable link to the channel.
+func channelMention(cid pomomo.VoiceChannelID) string {
+	return "<#" + string(cid) + ">"
 }
 
 // guildMember returns the interaction's guild and member; ok is false outside of guilds.
@@ -211,7 +219,7 @@ func StartSession(ctx context.Context, sessionManager SessionManager, dm Discord
 	})
 	if err != nil {
 		log.Error("failed to start session", "err", err)
-		if _, err := dm.EditResponse(it, TextDisplay("Failed to start session.")); err != nil {
+		if _, err := dm.EditResponse(it, TextDisplay("Pomomo couldn't start your session. Try again in a bit or reach out to support.")); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -249,8 +257,14 @@ func SkipInterval(ctx context.Context, sessionManager SessionManager, dm Discord
 
 	session, err := sessionManager.SkipInterval(ctx, id.TextCID)
 	if err != nil {
+		current, getErr := sessionManager.GetSession(id.TextCID)
+		if getErr != nil {
+			// already ended - its message has been updated by cleanup
+			log.Debug("skip pressed on ended session", "textCID", id.TextCID)
+			return true
+		}
 		log.Error("failed to skip interval", "err", err)
-		components := append(SessionMessageComponents(session), TextDisplay(defaultErrorMsg))
+		components := append(SessionMessageComponents(current), TextDisplay(defaultErrorMsg))
 		if _, err := followup(components...); err != nil {
 			log.Error(err)
 		}
@@ -318,8 +332,8 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, a Autoshush
 	// Get the session
 	session, err := sessionManager.GetSession(id.TextCID)
 	if err != nil {
-		log.Error("failed to get session", "err", err)
-		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
+		log.Debug("join pressed on ended session", "textCID", id.TextCID, "err", err)
+		if _, err := followup(TextDisplay(fmt.Sprintf("This session has already ended. Start a new one with `/%s`.", pomomo.StartCommand.Name))); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -336,8 +350,15 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, a Autoshush
 	// Get user's current voice state
 	vs, err := vsa.GetVoiceState(guildID, userID)
 	if err != nil {
-		log.Error("failed to get voice state", "userID", userID, "sid", session.ID, "err", err)
-		if _, err := followup(TextDisplay(defaultErrorMsg)); err != nil {
+		msg := defaultErrorMsg
+		if errors.Is(err, disgo.ErrVoiceStateNotFound) {
+			// bots can't pull users into voice, only move them between channels
+			log.Debug("join pressed while not in voice", "userID", userID, "sid", session.ID)
+			msg = fmt.Sprintf("Join %s first, then press **Join** again.", channelMention(session.Record.VoiceCID))
+		} else {
+			log.Error("failed to get voice state", "userID", userID, "sid", session.ID, "err", err)
+		}
+		if _, err := followup(TextDisplay(msg)); err != nil {
 			log.Error(err)
 		}
 		return true
@@ -347,8 +368,12 @@ func JoinSession(ctx context.Context, sessionManager SessionManager, a Autoshush
 	if vs.ChannelID != session.Record.VoiceCID {
 		err = vsa.MoveMember(guildID, userID, session.Record.VoiceCID)
 		if err != nil {
-			log.Error("failed to move user to voice channel", "err", err, "voiceCID", session.Record.VoiceCID)
-			if _, err := followup(TextDisplay("Failed to move you to the session voice channel.")); err != nil {
+			logRestErr("failed to move user to voice channel", err, "voiceCID", session.Record.VoiceCID)
+			msg := fmt.Sprintf("Pomomo couldn't move you to %s. Join it yourself, then press **Join** again.", channelMention(session.Record.VoiceCID))
+			if restErrCode(err) == rest.JSONErrorCodeLackPermissionsToPerformAction {
+				msg = fmt.Sprintf("Pomomo doesn't have permission to move you to %s. Join it yourself, then press **Join** again.", channelMention(session.Record.VoiceCID))
+			}
+			if _, err := followup(TextDisplay(msg)); err != nil {
 				log.Error(err)
 			}
 			return true

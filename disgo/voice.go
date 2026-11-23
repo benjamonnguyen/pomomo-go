@@ -2,6 +2,7 @@ package disgo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,9 @@ const (
 	// since the audio sender doesn't pull frames until the DAVE session is ready.
 	daveReadyTimeout = 10 * time.Second
 )
+
+// ErrVoiceStateNotFound means the member isn't connected to voice (or isn't cached).
+var ErrVoiceStateNotFound = errors.New("voice state not found")
 
 // Adapter implements voice state and audio operations on disgo.
 // Voice connections are kept per guild and reused across alerts.
@@ -79,7 +83,7 @@ func (a *Adapter) GetVoiceState(gid, uid string) (pomomo.VoiceState, error) {
 	}
 	vs, ok := a.caches.VoiceState(ids[0], ids[1])
 	if !ok || vs.ChannelID == nil {
-		return pomomo.VoiceState{}, fmt.Errorf("voice state not found for guild %s, user %s", gid, uid)
+		return pomomo.VoiceState{}, fmt.Errorf("%w for guild %s, user %s", ErrVoiceStateNotFound, gid, uid)
 	}
 	return pomomo.VoiceState{
 		ChannelID: FormatID[pomomo.VoiceChannelID](*vs.ChannelID),
